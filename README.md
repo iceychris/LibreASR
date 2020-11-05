@@ -15,5 +15,5 @@
 </p>
 
 <p align="center">
-  <img width="60%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action">
+  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="60%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
