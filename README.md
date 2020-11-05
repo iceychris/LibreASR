@@ -17,3 +17,17 @@
 <p align="center">
   <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="60%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
+
+## Example Apps
+
+<table align="center">
+  <tr align="center">
+    <td><img src="https://cdn.auth0.com/blog/react-js/react.png" width=33%></td>
+    <td><img src="https://docs.espressif.com/projects/esp-adf/en/latest/_images/esp32-lyrat-v4.2-side.jpg" width=33%></td>
+   </tr> 
+   <tr align="center">
+     <td>React Web App</td>
+     <td>ESP32-LyraT</td>
+  </td>
+  </tr>
+</table>
