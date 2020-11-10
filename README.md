@@ -18,12 +18,13 @@
   <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="60%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
 
+
 ## Example Apps
 
 <table align="center">
   <tr align="center">
-    <td><img src="https://cdn.auth0.com/blog/react-js/react.png" width=33%></td>
-    <td><img src="https://docs.espressif.com/projects/esp-adf/en/latest/_images/esp32-lyrat-v4.2-side.jpg" width=33%></td>
+    <td><a href="https://github.com/iceychris/LibreASR/tree/master/apps/web"><img src="https://cdn.auth0.com/blog/react-js/react.png" width=33%></a></td>
+    <td><a href="https://github.com/iceychris/LibreASR/tree/master/apps/esp32"><img src="https://docs.espressif.com/projects/esp-adf/en/latest/_images/esp32-lyrat-v4.2-side.jpg" width=33%></a></td>
    </tr> 
    <tr align="center">
      <td>React Web App</td>
@@ -31,3 +32,12 @@
   </td>
   </tr>
 </table>
+
+
+## References & Credits
+
+* [noahchalifour/rnnt-speech-recognition](https://github.com/noahchalifour/rnnt-speech-recognition)
+
+* [theblackcat102/Online-Speech-Recognition](https://github.com/theblackcat102/Online-Speech-Recognition)
+
+* [1ytic/warp-rnnt](https://github.com/1ytic/warp-rnnt)
