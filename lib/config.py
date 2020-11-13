@@ -144,7 +144,6 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     m = Transducer.from_config(conf, lang)
     # print(n_params(m))
 
-
     if inference:
         # load weights
         from .model_utils import load_asr_model

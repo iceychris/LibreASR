@@ -8,7 +8,7 @@ from .utils import standardize
 
 ALPHA = 0.1
 THETA = 1.0
-MIN_VAL = -10.
+MIN_VAL = -10.0
 
 DEBUG = False
 
@@ -47,16 +47,28 @@ class LMFuser:
         if self.has_lm:
             self.lm_logits, self.lm_state = self.lm(y_one_char, self.lm_state)
             standardize(self.lm_logits)
-            self.lm_logits[:, :, 0] = MIN_VAL 
+            self.lm_logits[:, :, 0] = MIN_VAL
 
     def fuse(self, joint_out, prob, pred, alpha=ALPHA, theta=THETA):
         lm_logits = self.lm_logits
         if self.has_lm and torch.is_tensor(lm_logits):
             standardize(joint_out)
-            joint_out[:, :, :, 0] = MIN_VAL 
+            joint_out[:, :, :, 0] = MIN_VAL
             if DEBUG:
-                print("lm:", lm_logits.shape, lm_logits.mean(), lm_logits.std(), lm_logits.max())
-                print("joint:", joint_out.shape, joint_out.mean(), joint_out.std(), joint_out.max())
+                print(
+                    "lm:",
+                    lm_logits.shape,
+                    lm_logits.mean(),
+                    lm_logits.std(),
+                    lm_logits.max(),
+                )
+                print(
+                    "joint:",
+                    joint_out.shape,
+                    joint_out.mean(),
+                    joint_out.std(),
+                    joint_out.max(),
+                )
             fused = alpha * lm_logits + theta * joint_out
             prob, pred = fused.max(-1)
             return fused, prob, pred

@@ -52,7 +52,7 @@ BS_VALID = 8
 DIM_TIME = 1
 
 # pre sorting capacity (n samples)
-SORTED_DL_ADVANCE_BY = 4000 
+SORTED_DL_ADVANCE_BY = 4000
 
 # debugging
 PRINT_BATCH_STATS = False
@@ -64,18 +64,14 @@ HOME = "/home/chris"
 @delegates(TfmdDL)
 class SortishDL(TfmdDL):
     def __init__(
-        self,
-        dataset,
-        tpls,
-        sort_func=None,
-        res=None,
-        reverse=True,
-        **kwargs,
+        self, dataset, tpls, sort_func=None, res=None, reverse=True, **kwargs,
     ):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
-            [self.sort_func(tpls[it], old=True) for it in self.items] if res is None else res
+            [self.sort_func(tpls[it], old=True) for it in self.items]
+            if res is None
+            else res
         )
         self.idx_max = np.argmax(self.res)
         self.reverse = reverse

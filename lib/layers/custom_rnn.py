@@ -131,7 +131,6 @@ class CustomRNN(nn.Module):
         # percentage of carrying over last state
         self.utsp = utsp
 
-
     def convert_to_cpu(self):
         return self
 

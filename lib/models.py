@@ -281,12 +281,9 @@ class Transducer(Module):
     def grab_bos(self, y, yl, bs, device):
         if self.training and self.use_tmp_bos:
             r = random.random()
-            thresh = (1.0 - self.use_tmp_bos_pcent)
+            thresh = 1.0 - self.use_tmp_bos_pcent
             cached_bos = self.bos_cache.get(bs)
-            if (
-                torch.is_tensor(cached_bos)
-                and r > thresh
-            ):
+            if torch.is_tensor(cached_bos) and r > thresh:
                 # use end of last batch as bos
                 bos = cached_bos
                 return bos
