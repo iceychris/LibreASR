@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package ASR;
+
+service ASR {
+  rpc Transcribe(Audio) returns (Transcript) {}
+  rpc TranscribeStream(stream Audio) returns (stream Transcript) {}
+}
+
+message Audio {
+  bytes data = 1;
+  int32 sr = 3;
+}
+
+message Transcript {
+  string data = 1;
+}
+

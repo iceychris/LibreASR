@@ -1,0 +1,51 @@
+html body {
+	height: 100%;
+	background-color: #ecf0f1;
+}
+
+.languageSelector {
+  margin-top: 1em;
+  text-align: left;
+  color: black;
+  font-size: 1em;
+}
+
+.languageSelector label {
+  margin-left: 1em;
+
+}
+
+.btn {
+  margin-top: 1em;
+  margin-bottom: 2em;
+}
+
+.transcript {
+  min-height: 7em;
+  font-size: 1.5em;
+}
+
+.info {
+  color: grey;
+  font-size: 0.9em;
+}
+
+.well {
+  background-image: none;
+  box-shadow: 0 0 0.5em 0.1em rgba(0, 0, 0, 0.1);
+}
+
+.recordIcon {
+  margin-right: 0.5em;
+  font-size: 2.1em;
+  color: grey;
+}
+.recording {
+  animation: blinker 1s linear infinite;
+  color: red;
+}
+@keyframes blinker {
+  50% {
+    opacity: 0;
+  }
+}

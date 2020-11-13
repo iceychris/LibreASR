@@ -1,0 +1,13 @@
+name: Docker Images
+
+on:
+  release:
+    types: [ created ]
+
+jobs:
+  build-x86-cpu:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: "[build-x86-cpu] docker image"
+      run: docker build ./docker --file docker/Dockerfile.cpu --tag libreasr:x86-cpu-$(date +%s)

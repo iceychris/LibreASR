@@ -1,0 +1,18 @@
+# misc
+packaging
+wheel
+setuptools
+
+# fastai stuff
+fastcore==1.0.0
+fastai2==0.0.30
+git+https://github.com/rbracco/fastai2_audio.git@7d55d83823d6ea091413a2277c0fb2fcec3fd9a6
+
+# other
+Cython
+tensorboard
+youtokentome
+editdistance
+jiwer
+IPython==7.17.0
+tornado==6.0.4

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: asr-demo
+spec:
+  selector:
+    matchLabels:
+      app: asr-demo
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: asr-demo
+    spec:
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+      - image: libreasr-deploy:latest
+        imagePullPolicy: Never
+        name: asr-demo
+        env:
+        - name: NUMBA_CACHE_DIR
+          value: "/tmp"
+        - name: MPLCONFIGDIR
+          value: "/tmp"
+        command:
+        - /bin/bash
+        - -c
+        - 'cd /workspace && make deploy'
+        ports:
+        - containerPort: 8080
+          name: http
+      hostname: asr-demo
+      restartPolicy: Always
+status: {}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: asr-demo
+  labels:
+    app: asr-demo
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+  selector:
+    app: asr-demo
+
+---
+
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: ingress-asr-demo-new
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - asr-demo.example.com
+    secretName: tls-asr-demo-new
+  rules:
+  - host: asr-demo.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: asr-demo
+          servicePort: 80
