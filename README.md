@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/iceychris/libreasr/actions"><img src="https://github.com/iceychris/libreasr/workflows/Docker%20Images/badge.svg"></a>
   <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+  <img alt="License: MIT" src="https://img.shields.io/github/license/iceychris/libreasr.svg">
   <a href="https://discord.gg/wrcjdv9ZrR"><img alt="Discord Shield" src="https://discordapp.com/api/guilds/777217547774459925/widget.png?style=shield"></a>
 </p>
 
@@ -72,3 +73,5 @@ You may also contribute by training a large model for longer.
 * [theblackcat102/Online-Speech-Recognition](https://github.com/theblackcat102/Online-Speech-Recognition)
 
 * [1ytic/warp-rnnt](https://github.com/1ytic/warp-rnnt)
+
+* [VKCOM/YouTokenToMe](https://github.com/VKCOM/YouTokenToMe)
