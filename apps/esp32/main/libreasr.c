@@ -44,9 +44,9 @@
    If you'd rather not, just change the below entries to strings with
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
-#define EXAMPLE_ESP_WIFI_SSID      "SSID"
-#define EXAMPLE_ESP_WIFI_PASS      "13371337"
-#define EXAMPLE_ESP_MAXIMUM_RETRY  3
+#define ESP_WIFI_SSID      "DEADBEEF"
+#define ESP_WIFI_PASS      "deadbeef314"
+#define ESP_MAXIMUM_RETRY  3
 
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
@@ -60,8 +60,8 @@ static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
 
 
-#define WS_URI "ws://libreasr-server/websocket"
-#define WS_PORT 8080
+#define LIBREASR_URI "ws://libreasr/asupersecretwebsocketpath345"
+#define LIBREASR_PORT 8080
 esp_websocket_client_handle_t ws_client;
 
 
@@ -70,15 +70,75 @@ static const char *TAG = "ASR";
 #define VAD_SAMPLE_RATE_HZ 16000
 #define VAD_FRAME_LENGTH_MS 80
 #define VAD_BUFFER_LENGTH (VAD_FRAME_LENGTH_MS * VAD_SAMPLE_RATE_HZ / 1000)
-#define FLOAT_DATA_LENGTH (VAD_BUFFER_LENGTH + 1)
+#define FLOAT_DATA_LENGTH (VAD_BUFFER_LENGTH + 2)
 static float * float_data = NULL;
-
 
 /* leds */
 #define GPIO_OUTPUT_IO_0    22
 #define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0))
 #define ESP_INTR_FLAG_DEFAULT 0
 static xQueueHandle leds_evt_queue = NULL;
+
+/* language switching */
+static char * text = NULL;
+static int text_offset = 0;
+static char * lang = "en  ";
+#define TEXT_LEN 1024
+
+
+static void reset_text() {
+    text_offset = 0;
+    if (text != NULL) {
+        memset(text, 0, TEXT_LEN);
+    } else {
+        text = (char *) malloc(TEXT_LEN * sizeof(char));
+        if (text == NULL) {
+            ESP_LOGE(TAG, "Memory allocation (text) failed!");
+        }
+    }
+}
+
+
+// forward declaration
+static void websocket_app_start(void);
+
+
+static uint32_t maybe_switch_lang(char * transcript, int len) {
+    uint32_t blinks = len;
+
+    // add to text
+    for (int i = 0; i < len; i++) {
+	text[text_offset + i] = transcript[i];
+    }
+    text[text_offset + len] = '\0';
+    text_offset += len;
+    ESP_LOGI(TAG, "Text: %s", text);
+
+    // switching logic
+    if (strcmp(lang, "en  ") == 0) {
+	if ((strstr(text, "switch") != NULL || strstr(text, "change") != NULL) && (strstr(text, "ger") != NULL || strstr(text, "geo") != NULL)) {
+            ESP_LOGI(TAG, "! ! !");
+            ESP_LOGI(TAG, "switching to de...");
+            ESP_LOGI(TAG, "! ! !");
+	    lang = "de  ";
+	    blinks += 20;
+	    reset_text();
+	    websocket_app_start();
+	}
+    }
+    if (strcmp(lang, "de  ") == 0) {
+	if (strstr(text, "wechsel") != NULL && strstr(text, "eng") != NULL) {
+            ESP_LOGI(TAG, "! ! !");
+            ESP_LOGI(TAG, "switching to en...");
+            ESP_LOGI(TAG, "! ! !");
+	    lang = "en  ";
+	    blinks += 20;
+	    reset_text();
+	    websocket_app_start();
+	}
+    }
+    return blinks;
+}
 
 
 static void websocket_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
@@ -93,12 +153,12 @@ static void websocket_event_handler(void *handler_args, esp_event_base_t base, i
         break;
     case WEBSOCKET_EVENT_DATA:
         if (data->op_code == 9 || data->op_code == 10) break;
-        ESP_LOGI(TAG, "WEBSOCKET_EVENT_DATA");
-        ESP_LOGI(TAG, "Received opcode=%d", data->op_code);
-        ESP_LOGW(TAG, "Received=%.*s", data->data_len, (char *)data->data_ptr);
-        ESP_LOGW(TAG, "Total payload length=%d, data_len=%d, current payload offset=%d\r\n", data->payload_len, data->data_len, data->payload_offset);
-        uint32_t l = data->data_len;
-        xQueueSendToBack(leds_evt_queue, &l, NULL);
+        // ESP_LOGI(TAG, "WEBSOCKET_EVENT_DATA");
+        // ESP_LOGI(TAG, "Received opcode=%d", data->op_code);
+        // ESP_LOGW(TAG, "Received=%.*s", data->data_len, (char *)data->data_ptr);
+        // ESP_LOGW(TAG, "Total payload length=%d, data_len=%d, current payload offset=%d\r\n", data->payload_len, data->data_len, data->payload_offset);
+	uint32_t blinks = maybe_switch_lang((char *) data->data_ptr, data->data_len);
+        xQueueSendToBack(leds_evt_queue, &blinks, NULL);
         break;
     case WEBSOCKET_EVENT_ERROR:
         ESP_LOGI(TAG, "WEBSOCKET_EVENT_ERROR");
@@ -121,13 +181,13 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
         {
-            if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
+            if (s_retry_num < ESP_MAXIMUM_RETRY) {
                 esp_wifi_connect();
                 xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
                 s_retry_num++;
                 ESP_LOGI(TAG,"retry to connect to the AP");
             }
-            ESP_LOGI(TAG,"connect to the AP fail\n");
+            ESP_LOGI(TAG,"failed to connect to the AP! Are the WiFi-Credentials okay?\n");
             break;
         }
     default:
@@ -148,8 +208,8 @@ void wifi_init_sta()
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = EXAMPLE_ESP_WIFI_SSID,
-            .password = EXAMPLE_ESP_WIFI_PASS,
+            .ssid = ESP_WIFI_SSID,
+            .password = ESP_WIFI_PASS,
             /* Setting a password implies station will connect to all security modes including WEP/WPA.
              * However these modes are deprecated and not advisable to be used. Incase your Access point
              * doesn't support WPA2, these mode can be enabled by commenting below line */
@@ -163,15 +223,15 @@ void wifi_init_sta()
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
     ESP_LOGI(TAG, "connect to ap SSID:%s password:%s",
-             EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS);
+             ESP_WIFI_SSID, ESP_WIFI_PASS);
 }
 
 
 static void websocket_app_start(void)
 {
     esp_websocket_client_config_t websocket_cfg = {};
-    websocket_cfg.uri = WS_URI;
-    websocket_cfg.port = WS_PORT;
+    websocket_cfg.uri = LIBREASR_URI;
+    websocket_cfg.port = LIBREASR_PORT;
 
     ESP_LOGI(TAG, "Connecting to %s...", websocket_cfg.uri);
 
@@ -193,12 +253,24 @@ static void websocket_app_start(void)
 // len: number of shorts in that buffer
 static void send_voice_data(int16_t * buf, size_t len) {
 
-    // store sr
-    float_data[0] = (float) VAD_SAMPLE_RATE_HZ;
+    int offset = 0;
 
+    // store lang
+    uint8_t lang_arr[4];
+    for (int i = 0; i < 4; i++) {
+        lang_arr[i] = (uint8_t) lang[i];
+    }
+    float_data[offset] = *((float *) lang_arr);
+    offset += 1;
+
+    // store sr
+    float_data[offset] = (float) VAD_SAMPLE_RATE_HZ;
+    offset += 1;
+
+    // store data
     // convert short to float
     for (int i = 0; i < len; i++) {
-        float_data[i + 1] = ((float) buf[i]) * 0.0002;
+        float_data[i + offset] = ((float) buf[i]) * 0.0002;
     }
 
     // send
@@ -218,8 +290,8 @@ static void leds_task(void* arg)
     uint32_t len;
     for(;;) {
         if(xQueueReceive(leds_evt_queue, &len, portMAX_DELAY)) {
-            printf("LEDs: received payload of size %d\n", len);
-            for (int i = 0; i < 7; i++) {
+            // printf("LEDs: received payload of size %d\n", len);
+            for (int i = 0; i < len; i++) {
                 gpio_set_level(GPIO_OUTPUT_IO_0, i % 2);
                 vTaskDelay(50 / portTICK_RATE_MS);
             }
@@ -346,6 +418,7 @@ void app_main()
         ESP_LOGE(TAG, "Memory allocation (float_data) failed!");
         goto abort_speech_detection;
     }
+    reset_text();
 
     while (1) {
         raw_stream_read(raw_read, (char *)vad_buff, VAD_BUFFER_LENGTH * sizeof(short));
