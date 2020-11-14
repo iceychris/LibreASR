@@ -72,7 +72,7 @@ deploy:
 
 deploy_all: deploy_build deploy_save deploy_scp
 deploy_build:
-	docker build -f docker/Dockerfile.deploy -t libreasr-deploy .
+	docker build -f docker/Dockerfile.deploy -t iceychris/libreasr:latest .
 
 deploy_save:
 	docker save libreasr-deploy > libreasr-deploy
@@ -81,7 +81,7 @@ deploy_scp:
 	scp libreasr-deploy drake:/home/chris/
 
 deploy_test:
-	docker run -it -p 8080:8080 libreasr-deploy
+	docker run -it -p 8080:8080 iceychris/libreasr:latest
 
 
 

@@ -1,4 +1,5 @@
-FROM libreasr:latest
+FROM asr-pytorch
+# FROM iceychris/libreasr:latest-x86-cpu
 
 COPY . /workspace
 

@@ -35,6 +35,15 @@
 </table>
 
 
+## Quickstart
+
+```
+docker run -it -p 8080:8080 iceychris/libreasr:latest
+```
+
+Head your browser to http://localhost:8080/
+
+
 ## References & Credits
 
 * [noahchalifour/rnnt-speech-recognition](https://github.com/noahchalifour/rnnt-speech-recognition)

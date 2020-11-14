@@ -31,4 +31,4 @@ jobs:
         file: ./docker/Dockerfile.cpu
         platforms: linux/amd64
         push: true
-        tags: iceychris/libreasr:latest-x86-cpu
+        tags: iceychris/libreasr:base-x86-cpu
