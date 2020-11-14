@@ -44,7 +44,19 @@ docker run -it -p 8080:8080 iceychris/libreasr:latest
 Head your browser to http://localhost:8080/
 
 
+## Contributing
+
+Feel free to [open an issue](https://github.com/iceychris/LibreASR/issues/new)
+or [create a pull request](https://github.com/iceychris/LibreASR/pulls).
+
+You may also contribute by training a large model for longer.
+
+
 ## References & Credits
+
+* [Y. He et al., “Streaming End-to-end Speech Recognition For Mobile Devices,”](http://arxiv.org/abs/1811.06621) 
+
+* [A. Kannan et al., “Large-Scale Multilingual Speech Recognition with a Streaming End-to-End Model,”](http://arxiv.org/abs/1909.05330)
 
 * [noahchalifour/rnnt-speech-recognition](https://github.com/noahchalifour/rnnt-speech-recognition)
 
