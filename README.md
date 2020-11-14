@@ -44,6 +44,14 @@ docker run -it -p 8080:8080 iceychris/libreasr:latest
 Head your browser to http://localhost:8080/
 
 
+## Training
+
+### Language Model
+
+See [this colab notebook](https://colab.research.google.com/drive/1FU1GI_UguqiK48kgrT3l7Abj3xXxZMKL?usp=sharing)
+or use [this notebook](libreasr-lm.ipynb).
+
+
 ## Contributing
 
 Feel free to [open an issue](https://github.com/iceychris/LibreASR/issues/new)
