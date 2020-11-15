@@ -10,7 +10,7 @@
 </p>
 
 <h3 align="center">
-  An On-Premise, Streaming Speech Recognition System
+  An On-Premises, Streaming Speech Recognition System
 </h3>
 
 <p align="center">
