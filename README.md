@@ -14,11 +14,11 @@
 </h3>
 
 <p align="center">
-  Built with <a href="https://pytorch.org/">PyTorch</a> and <a href="https://www.fast.ai/">fastai</a>
+  Built with <a href="https://pytorch.org/">PyTorch</a> and <a href="https://github.com/fastai/fastai">fastai</a>
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="60%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
+  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
 
 
@@ -46,6 +46,37 @@ docker run -it -p 8080:8080 iceychris/libreasr:latest
 Head your browser to http://localhost:8080/
 
 
+## Features
+
+- [x] RNN-T network
+
+- [x] [Fused language models](lib/lm.py)
+
+- [x] [Dynamic Bucketing DataLoader](lib/data.py)
+
+- [x] Dynamic Quantization
+
+- [x] `english`, `german`
+
+- [ ] `french`, `spanish`, `italian`, `multilingual`
+
+- [ ] Tuned language model fusion
+
+
+## Performance
+
+| Model     | Dataset | Network    | Params | CER (dev) | WER (dev) |
+|-----------|---------|------------|--------|-----------|-----------|
+| `english` | 1400h   | `6-2-1024` | 70M    | 18.9      | 23.8      |
+| `german`  | 800h    | `6-2-1024` | 70M    | 23.2      | 37.6      |
+
+While this is clearly not SotA, training the models for longer
+and on multiple GPUs (instead of a single `2080 ti`) would yield better results.
+
+See [releases](https://github.com/iceychris/LibreASR/releases)
+for pretrained models.
+
+
 ## Training
 
 ### Language Model
@@ -56,8 +87,9 @@ or use [this notebook](libreasr-lm.ipynb).
 
 ## Contributing
 
-Feel free to [open an issue](https://github.com/iceychris/LibreASR/issues/new)
-or [create a pull request](https://github.com/iceychris/LibreASR/pulls).
+Feel free to [open an issue](https://github.com/iceychris/LibreASR/issues/new),
+[create a pull request](https://github.com/iceychris/LibreASR/pulls) or
+[join the Discord](https://discord.gg/wrcjdv9ZrR).
 
 You may also contribute by training a large model for longer.
 
