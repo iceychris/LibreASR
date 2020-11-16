@@ -43,6 +43,29 @@
 docker run -it -p 8080:8080 iceychris/libreasr:latest
 ```
 
+The output looks like this:
+
+```
+make sde &
+make sen &
+make b
+make[1]: Entering directory '/workspace'
+python3 -u api-server.py de
+make[1]: Entering directory '/workspace'
+python3 -u api-server.py en
+make[1]: Entering directory '/workspace'
+python3 -u api-bridge.py
+[api-bridge] running on :8080
+LM: loaded.
+LM: loaded.
+Model and Pipeline set up.
+[api-server] gRPC server running on [::]:50051 language en
+Model and Pipeline set up.
+[api-server] gRPC server running on [::]:50052 language de
+```
+
+If it doesn't look like that [this issue](https://github.com/iceychris/LibreASR/issues/5) might help.
+
 Head your browser to http://localhost:8080/
 
 
