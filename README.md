@@ -79,6 +79,32 @@ for pretrained models.
 
 ## Training
 
+### RNN-T Model
+
+* get some audio data with transcriptions
+(e.g. [librispeech](http://www.openslr.org/12/), [common voice](https://commonvoice.mozilla.org/en/datasets), ...)
+
+* edit [create-asr-dataset.py](./create-asr-dataset.py) if you use a custom dataset
+
+* process each of your datasets using [create-asr-dataset.py](./create-asr-dataset.py), e.g.:
+
+```
+  python3 create-asr-dataset.py /data/common-voice-english common-voice --lang en --workers 4
+```
+
+This results in multiple `asr-dataset.csv` files, which will be used for training.
+
+* edit the configuration [testing.yaml](./config/testing.yaml) to point to your data,
+choose transforms and tweak other settings
+
+* adjust and run [libreasr.ipynb](./libreasr.ipynb) to start training
+
+* watch the training progress in [tensorboard](https://www.tensorflow.org/tensorboard)
+
+* the model with the best validation loss will get saved to `models/model.pth`,
+the model with the best WER ends up in `models/best_wer.pth`
+
+
 ### Language Model
 
 See [this colab notebook](https://colab.research.google.com/drive/1FU1GI_UguqiK48kgrT3l7Abj3xXxZMKL?usp=sharing)
