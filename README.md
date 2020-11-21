@@ -52,19 +52,21 @@ make b
 make[1]: Entering directory '/workspace'
 python3 -u api-server.py de
 make[1]: Entering directory '/workspace'
-python3 -u api-server.py en
-make[1]: Entering directory '/workspace'
 python3 -u api-bridge.py
+make[1]: Entering directory '/workspace'
+python3 -u api-server.py en
 [api-bridge] running on :8080
-LM: loaded.
-LM: loaded.
-Model and Pipeline set up.
-[api-server] gRPC server running on [::]:50051 language en
-Model and Pipeline set up.
+[quantization] LM done.
+[quantization] LM done.
+[LM] loaded.
+[LM] loaded.
+[quantization] Transducer done.
+[Inference] Model and Pipeline set up.
 [api-server] gRPC server running on [::]:50052 language de
+[quantization] Transducer done.
+[Inference] Model and Pipeline set up.
+[api-server] gRPC server running on [::]:50051 language en
 ```
-
-If it doesn't look like that [this issue](https://github.com/iceychris/LibreASR/issues/5) might help.
 
 Head your browser to http://localhost:8080/
 
@@ -137,7 +139,7 @@ or use [this notebook](libreasr-lm.ipynb).
 ## Contributing
 
 Feel free to [open an issue](https://github.com/iceychris/LibreASR/issues/new),
-[create a pull request](https://github.com/iceychris/LibreASR/pulls) or
+[create a pull request](https://github.com/iceychris/LibreASR/pulls) and
 [join the Discord](https://discord.gg/wrcjdv9ZrR).
 
 You may also contribute by training a large model for longer.

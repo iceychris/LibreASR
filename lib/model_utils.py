@@ -10,6 +10,8 @@ import torch
 
 from fastai2.learner import load_model
 
+from .utils import maybe_quantize
+
 
 _PATH_ARCHIVE = Path("libreasr-model.tar.gz")
 _PATH_TOKENIZER = Path("tokenizer.yttm-model")
@@ -84,8 +86,6 @@ def load_asr_model(
     # quantize model
     #  we need to this before loading our model
     #  as the saved model is quantized ???
-    model = torch.quantization.quantize_dynamic(
-        model, {torch.nn.LSTM, torch.nn.Linear}, dtype=torch.qint8
-    )
+    model = maybe_quantize(model)
 
     return model
