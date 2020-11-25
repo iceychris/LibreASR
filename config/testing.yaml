@@ -100,14 +100,11 @@ datasets:
   - tatoeba-en
 
 # percentage of each individual dataframe used
-datasets_pcent: 1.0
-
-# percentage of data used
-pcent: 1.0
-
-# validation split
-# 1%
-valid_pcent: 0.01
+#  (builder)
+pcent:
+    train: 0.01
+    valid: 0.01
+    test: 1.0
 
 
 ###
@@ -193,21 +190,22 @@ model:
   embed_sz: 512
   hidden_sz: 1024
   out_sz: 1024
+  joint_sz: 1280
   vocab_sz: 2048
   encoder:
     rnn_type: "LSTM"
     num_layers: 6
-    dropout: 0.3
+    dropout: 0.1
     reduction_factor: 1
     reduction_factors: []
     layer_norm: false
-    use_tmp_state_pcent: 0.99
+    use_tmp_state_pcent: 0.95
   predictor:
     rnn_type: "NBRC"
     num_layers: 2
-    dropout: 0.3
+    dropout: 0.1
     layer_norm: false
-    use_tmp_state_pcent: 0.99
+    use_tmp_state_pcent: 0.95
   joint:
     method: "concat"
     dropout: 0.0
@@ -227,11 +225,15 @@ norm_file: "./tmp/norm.pt"
 # ascending data length?
 ascending: True
 
-# whether to sort batches (order) by size or not (SortedDL)
+# whether to sort batches (order) by size or not
+#  DataLoader
 shuffle: True
 
 # shuffle at builder stage
-shuffle_builder: True
+shuffle_builder:
+    train: True
+    valid: True
+    test: True
 
 
 ###
@@ -249,7 +251,7 @@ training:
 # batch size
 bs: 8 # 6
 # best english run: 10 * 16 = 160
-accumulate_n_batches: 64 # 7 # 24
+accumulate_n_batches: 96 # 7 # 24
 
 # mixed precision
 mp: false
@@ -265,11 +267,11 @@ wanted_vocab_sz: 2048
 seed: 42
 
 # CPU workers
-num_workers: 4
+num_workers: 3
 
 # testing
 tensorboard: true
-wandb: true
+wandb: false
 tests_per_epoch: 8
 
 # language model

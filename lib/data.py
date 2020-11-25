@@ -37,7 +37,7 @@ from .transforms import update_tfms, update_tfms_multi, BatchNormalize
 
 # x: maximum batch capacity
 #  n stacked frames
-X_MAX = 8 * 7750
+X_MAX = 8 * 6500 # 7750
 
 # y: maximum batch capacity
 #  n BPE tokens
@@ -52,7 +52,8 @@ BS_VALID = 8
 DIM_TIME = 1
 
 # pre sorting capacity (n samples)
-SORTED_DL_ADVANCE_BY = 4000
+DL_ADVANCE_BY_SORTISH = 100
+DL_ADVANCE_BY_BUCKETING = 4000
 
 # debugging
 PRINT_BATCH_STATS = False
@@ -69,7 +70,7 @@ class SortishDL(TfmdDL):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
-            [self.sort_func(tpls[it], old=True) for it in self.items]
+            [self.sort_func(tpls[it]) for it in self.items]
             if res is None
             else res
         )
@@ -86,7 +87,7 @@ class SortishDL(TfmdDL):
         idxs = np.random.permutation(idxs)
         idx_max = np.extract(idxs == self.idx_max, idxs)[0]
         idxs[0], idxs[idx_max] = idxs[idx_max], idxs[0]
-        sz = self.bs * SORTED_DL_ADVANCE_BY
+        sz = self.bs * DL_ADVANCE_BY_SORTISH
         chunks = [idxs[i : i + sz] for i in range(0, len(idxs), sz)]
         chunks = [sorted(s, key=lambda i: self.res[i], reverse=True) for s in chunks]
         sort_idx = np.concatenate(chunks)
@@ -145,7 +146,7 @@ class DynamicBucketingDL(TfmdDL):
         idxs = nprng.permutation(idxs)
         idx_max = np.extract(idxs == self.idx_max, idxs)[0]
         idxs[0], idxs[idx_max] = idxs[idx_max], idxs[0]
-        sz = SORTED_DL_ADVANCE_BY
+        sz = DL_ADVANCE_BY_BUCKETING
         chunks = [idxs[i : i + sz] for i in range(0, len(idxs), sz)]
         chunks = [sorted(s, key=lambda i: self.res[i], reverse=True) for s in chunks]
 
@@ -202,15 +203,6 @@ class DynamicBucketingDL(TfmdDL):
                 pickle.dump(seed, f)
 
         return iter(batches)
-
-
-def grab_fraction(splits, pcent, seed, pre=list, post=L):
-    random.seed(seed)
-    new_splits = []
-    for split in splits:
-        k = int(len(split) * pcent)
-        new_splits.append(post(random.sample(pre(split), k)))
-    return new_splits
 
 
 def pad_collate_float(
@@ -292,9 +284,7 @@ def pad_collate_float(
     return X, Y
 
 
-def sorter(tpl, y=False, old=False):
-    if old:
-        return tpl[1]
+def sorter(tpl, y=False):
     if y:
         return tpl.ylen
     return tpl.xlen
@@ -306,10 +296,9 @@ def preload_tfms(tfm_funcs, tfm_args):
 
 
 def grab_asr_databunch(
-    builder,
+    builder_train,
+    builder_valid,
     seed,
-    pcent,
-    valid_pcent,
     tfms,
     tfms_args,
     sorted_dl_args,
@@ -321,17 +310,15 @@ def grab_asr_databunch(
 ) -> DataLoaders:
 
     # get all audio files
-    files, idxs, tpls, df = builder.get()
-
-    # splits
-    splits_all = splitter(valid_pcent, seed=seed)(files)
-    splits = grab_fraction(splits_all, pcent, seed)
+    files_train, idxs_train, tpls_train, df_train = builder_train.get()
+    files_valid, idxs_valid, tpls_valid, df_valid = builder_valid.get()
 
     # pass information to the transforms
     # and create them later
-    extra = OrderedDict(tfms_args, files=files, tpls=tpls)
-    extra_train = OrderedDict(extra, random=True,)
-    extra_valid = OrderedDict(extra, random=False,)
+    extra_train = OrderedDict(tfms_args, files=files_train, tpls=tpls_train)
+    extra_valid = OrderedDict(tfms_args, files=files_valid, tpls=tpls_valid)
+    extra_train = OrderedDict(extra_train, random=True,)
+    extra_valid = OrderedDict(extra_valid, random=False,)
 
     # update MySortedDL args
     sorted_dl_args.update(
@@ -341,24 +328,26 @@ def grab_asr_databunch(
             ),
             sort_func=sorter,
             after_batch=after_batch,
-            tpls=tpls,
         )
     )
     sorted_dl_args_train = sorted_dl_args.copy()
+    sorted_dl_args_train["tpls"] = tpls_train
+
     sorted_dl_args_valid = sorted_dl_args.copy()
     sorted_dl_args_valid["bs"] = BS_VALID
     sorted_dl_args_valid["shuffle"] = True
+    sorted_dl_args_valid["tpls"] = tpls_valid
 
     # create tfms
     tfms_train, tfms_valid = update_tfms_multi((tfms,) * 2, (extra_train, extra_valid))
 
     # Datasets
-    dsrc_train = Datasets(idxs, tfms_train, splits=splits)
-    dsrc_valid = Datasets(idxs, tfms_valid, splits=splits)
+    dsrc_train = Datasets(idxs_train, tfms_train)
+    dsrc_valid = Datasets(idxs_valid, tfms_valid)
 
     # Special DataLoader
-    train = DynamicBucketingDL(dsrc_train.train, **sorted_dl_args_train)
-    valid = SortishDL(dsrc_valid.valid, **sorted_dl_args_valid)
+    train = DynamicBucketingDL(dsrc_train.subset(0), **sorted_dl_args_train)
+    valid = SortishDL(dsrc_valid.subset(0), **sorted_dl_args_valid)
 
     # DataLoaders
     db = DataLoaders(train, valid)
@@ -468,7 +457,7 @@ def grab_asr_databunch(
 
 class ASRDatabunch:
     @staticmethod
-    def from_config(conf, lang, builder, tfms):
+    def from_config(conf, lang, builder_train, builder_valid, tfms):
         tfms_args = OrderedDict(
             lang=lang,
             channels=conf["channels"],
@@ -501,10 +490,9 @@ class ASRDatabunch:
         after_batch = []
 
         db = grab_asr_databunch(
-            builder,
+            builder_train,
+            builder_valid,
             conf["seed"],
-            conf["pcent"],
-            conf["valid_pcent"],
             tfms,
             tfms_args,
             sorted_dl_args,

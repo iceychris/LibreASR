@@ -82,7 +82,7 @@ def test(
 
     # maybe save best
     if _wer < self.best_wer:
-        self.save("best_wer", with_opt=False)
+        self.save("best_wer", with_opt=True)
         self.best_wer = _wer
         print("New best WER saved:", _wer)
 

@@ -27,7 +27,7 @@ def save(df, path, print_fun=print):
 
 
 def check_save(df, path, **kwargs):
-    if path_train.exists():
+    if path.exists():
         usr = input(f"> ! csv already exists. overwrite {path}? [y/N] \n")
         if usr.lower() != "y":
             return

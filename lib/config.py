@@ -113,13 +113,14 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
 
     if not inference:
         # grab builder
-        builder = ASRDatabunchBuilder.from_config(conf)
+        builder_train = ASRDatabunchBuilder.from_config(conf, mode="train")
+        builder_valid = ASRDatabunchBuilder.from_config(conf, mode="valid")
 
     # grab language + sanity check
     try:
         lang, _ = get_language(model_file=conf["tokenizer"]["model_file"])
     except:
-        builder.train_tokenizer(
+        builder_train.train_tokenizer(
             model_file=conf["tokenizer"]["model_file"],
             vocab_sz=conf["model"]["vocab_sz"],
         )
@@ -128,7 +129,7 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
 
     if not inference:
         # grab databunch + sanity check
-        db = ASRDatabunch.from_config(conf, lang, builder, tfms)
+        db = ASRDatabunch.from_config(conf, lang, builder_train, builder_valid, tfms)
         check_db(db)
 
     # load lm
@@ -160,4 +161,4 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         # grab learner
         learn = ASRLearner.from_config(conf, db, m)
 
-        return conf, lang, builder, db, m, learn
+        return conf, lang, builder_train, builder_valid, db, m, learn

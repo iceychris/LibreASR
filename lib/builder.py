@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,12 @@ import torch.nn.functional as F
 
 from .utils import sanitize_str
 
-CSV_NAME = "asr-dataset.csv.new"
+CSV = {
+    "train": "asr-dataset-train.csv",
+    "valid": "asr-dataset-valid.csv",
+    "test": "asr-dataset-test.csv",
+}
+
 TOKENIZER_MODEL_FILE = "tmp/tokenizer.yttm-model"
 CORPUS_FILE = "tmp/corpus.txt"
 
@@ -19,33 +25,38 @@ CORPUS_FILE = "tmp/corpus.txt"
 class ASRDatabunchBuilder:
     def __init__(self):
         self.do_shuffle = False
+        self.mode = None
 
     @staticmethod
-    def from_config(conf):
+    def from_config(conf, mode):
         paths = [conf["dataset_paths"][x] for x in conf["datasets"]]
-        pcent = conf["datasets_pcent"]
-        builder = ASRDatabunchBuilder().multi(paths, pcent)
-        if conf["apply_limits"]:
+        pcent = conf["pcent"][mode]
+        builder = ASRDatabunchBuilder().set_mode(mode).multi(paths, pcent)
+        if conf["apply_limits"] and mode == "train":
             builder = (
                 builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
                 .y_bounds(conf["y_min"], conf["y_max"])
                 .set_max_words(conf["y_max_words"])
             )
-            if conf["shuffle_builder"]:
+            if conf["shuffle_builder"][mode]:
                 builder.shuffle()
         builder.build()
         return builder
 
+    def set_mode(self, mode):
+        self.mode = mode
+        return self
+
     def single(self, path):
         path = Path(path)
-        self.df = pd.read_csv(path / CSV_NAME)
+        self.df = pd.read_csv(path / CSV[self.mode])
         return self
 
     def multi(self, paths, pcent=1.0):
         dfs = []
         for path in paths:
             path = Path(path)
-            df = pd.read_csv(path / CSV_NAME)
+            df = pd.read_csv(path / CSV[self.mode])
             if pcent != 1.0:
                 df = df.sample(frac=pcent)
             dfs.append(df)
@@ -128,6 +139,7 @@ class ASRDatabunchBuilder:
 
     def print(self):
         if self.built:
+            print("mode:", self.mode)
             print("num samples:", len(self.df))
             print("num hours:", self.df.xlen.values.sum() / (1000.0 * 3600.0))
             print(self.df.head())
@@ -136,6 +148,7 @@ class ASRDatabunchBuilder:
     def dump_labels(self, to_file=CORPUS_FILE):
         assert self.built
         print(f"Dumping labels to {to_file}")
+        os.makedirs(Path(to_file).parent, exist_ok=True)
         with open(to_file, "w") as f:
             for i, row in tqdm.tqdm(self.df.iterrows(), total=len(self.df)):
                 f.write(sanitize_str(row.label) + "\n")
