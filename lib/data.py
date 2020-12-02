@@ -70,7 +70,7 @@ class SortishDL(TfmdDL):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
-            [self.sort_func(tpls[it]) for it in self.items]
+            [self.sort_func(tpls[it], noop=True) for it in self.items]
             if res is None
             else res
         )
@@ -220,6 +220,7 @@ def pad_collate_float(
 ]:
     "Function that collect samples and adds padding"
 
+    # set_trace()
     n_samples = len(samples)
     x_lens = [int(s[0].size(dim_T)) for s in samples]
     y_lens = [s[1][1] for s in samples]
@@ -236,7 +237,6 @@ def pad_collate_float(
         print(
             f"xlens | mean: {np.mean(xlens):3.0f}, min: {min(xlens):3.0f}, max: {max(xlens):3.0f}, wasted computation: {(n_x_elem - sum(xlens)) / n_x_elem * 100.:.2f}%"
         )
-        # set_trace()
 
     def _pad(q, _max):
         to_pad = _max - len(q)
@@ -284,7 +284,9 @@ def pad_collate_float(
     return X, Y
 
 
-def sorter(tpl, y=False):
+def sorter(tpl, y=False, noop=False):
+    if noop:
+        return 1
     if y:
         return tpl.ylen
     return tpl.xlen

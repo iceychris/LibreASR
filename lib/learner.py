@@ -6,7 +6,7 @@ import torch
 from fastcore.foundation import L, patch
 from fastai2.learner import *
 from fastai2.callback.core import Callback
-from fastai2.callback.tracker import TerminateOnNaNCallback, SaveModelCallback
+from fastai2.callback.tracker import TerminateOnNaNCallback, SaveModelCallback, ReduceLROnPlateau
 from fastai2.callback.fp16 import MixedPrecision
 from fastai2.callback.data import CudaCallback
 from fastai2.optimizer import Adam, Lamb, Lookahead, ranger
@@ -167,6 +167,7 @@ class ASRLearner(Learner):
             CudaCallback(),
             TerminateOnNaNCallback(),
             SaveModelCallback(),
+            ReduceLROnPlateau(patience=1, min_lr=1e-6),
         ]
         optim = conf["training"]["optimizer"].lower()
         if optim == "ranger":

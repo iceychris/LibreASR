@@ -12,6 +12,7 @@ from fastai2.data.all import *
 from fastai2_audio.core.signal import AudioTensor
 
 from .metrics import cer, wer
+from IPython.core.debugger import set_trace
 
 
 @patch
@@ -54,6 +55,7 @@ def test(
     iterator = iter(dl)
     for batch, _ in tqdm(zip(iterator, _iter_list), total=_for):
         for X, Y in zip(batch[0][0], batch[1][0]):
+            # set_trace()
             utterance = X.to(device)
             label = Y.detach().cpu().numpy().tolist()
 

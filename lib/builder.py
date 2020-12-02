@@ -32,7 +32,7 @@ class ASRDatabunchBuilder:
         paths = [conf["dataset_paths"][x] for x in conf["datasets"]]
         pcent = conf["pcent"][mode]
         builder = ASRDatabunchBuilder().set_mode(mode).multi(paths, pcent)
-        if conf["apply_limits"] and mode == "train":
+        if conf["apply_limits"]:
             builder = (
                 builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
                 .y_bounds(conf["y_min"], conf["y_max"])
@@ -185,22 +185,25 @@ class ASRDatabunchBuilder:
         print(encoded2)
         print(decoded)
 
-    def plot(self):
+    def plot(self, save=False):
         if self.built:
             import matplotlib.pyplot as plt
 
             plt.hist(self.df.xlen.values, bins=50)
             plt.title(f"xlen ({self.df.xlen.values.sum() / 3600000.:.2f} hours)")
             plt.show()
-            plt.savefig("./plots/figures/data-x.png", dpi=300)
+            if save:
+                plt.savefig("./plots/figures/data-x.png", dpi=300)
             plt.hist(self.df.ylen.values, bins=30)
             plt.title("ylen")
             plt.show()
-            plt.savefig("./plots/figures/data-y.png", dpi=300)
+            if save:
+                plt.savefig("./plots/figures/data-y.png", dpi=300)
             plt.hist(self.df.xlen.values / self.df.ylen.values, bins=50)
             plt.title("xlen/ylen")
             plt.show()
-            plt.savefig("./plots/figures/data-x-y.png", dpi=300)
+            if save:
+                plt.savefig("./plots/figures/data-x-y.png", dpi=300)
         return self
 
 

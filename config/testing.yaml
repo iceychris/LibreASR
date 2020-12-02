@@ -17,7 +17,7 @@ transforms:
       wrap: true
       partial: true
       args:
-        delta: 25
+        delta: 35
     - name: ChangeVolume
       wrap: true
       partial: true
@@ -27,13 +27,13 @@ transforms:
       wrap: true
       partial: true
       args:
-        noise_level: 0.05
+        noise_level: 0.15
         color: 0
     - name: MySignalShifter
       wrap: true
       partial: true
       args:
-        max_time: 0.1
+        max_time: 0.2
         direction: 1
     - name: PadderCutter
     - name: TransformTime
@@ -47,13 +47,13 @@ transforms:
       wrap: true
       partial: true
       args:
-        num_masks: 4
+        num_masks: 5
         size: 2
     - name: MyMaskFreq
       wrap: true
       partial: true
       args:
-        num_masks: 4
+        num_masks: 5
         size: 4
 
     # reduce time dimension
@@ -94,16 +94,16 @@ datasets:
     # - yt-de
   - yt-en
   - librispeech-0
-  - librispeech-1
-  - librispeech-2
+    # - librispeech-1
+    # - librispeech-2
   - common-voice-en
-  - tatoeba-en
+    # - tatoeba-en
 
 # percentage of each individual dataframe used
 #  (builder)
 pcent:
-    train: 0.01
-    valid: 0.01
+    train: 1.0
+    valid: 1.0
     test: 1.0
 
 
@@ -190,7 +190,7 @@ model:
   embed_sz: 512
   hidden_sz: 1024
   out_sz: 1024
-  joint_sz: 1280
+  joint_sz: 1024
   vocab_sz: 2048
   encoder:
     rnn_type: "LSTM"
@@ -199,19 +199,19 @@ model:
     reduction_factor: 1
     reduction_factors: []
     layer_norm: false
-    use_tmp_state_pcent: 0.95
+    use_tmp_state_pcent: 0.99
   predictor:
     rnn_type: "NBRC"
     num_layers: 2
     dropout: 0.1
     layer_norm: false
-    use_tmp_state_pcent: 0.95
+    use_tmp_state_pcent: 0.99
   joint:
     method: "concat"
     dropout: 0.0
   layer_norm: false
   use_tmp_bos: true
-  use_tmp_bos_pcent: 0.1
+  use_tmp_bos_pcent: 0.2
 
 
 ###
@@ -251,7 +251,7 @@ training:
 # batch size
 bs: 8 # 6
 # best english run: 10 * 16 = 160
-accumulate_n_batches: 96 # 7 # 24
+accumulate_n_batches: 64 # 128 # 96 # 7 # 24
 
 # mixed precision
 mp: false
@@ -271,7 +271,7 @@ num_workers: 3
 
 # testing
 tensorboard: true
-wandb: false
+wandb: false # true
 tests_per_epoch: 8
 
 # language model

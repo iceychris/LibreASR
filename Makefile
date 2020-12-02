@@ -91,3 +91,7 @@ deploy_test:
 
 nb:
 	pip3 install jupyter && jupyter notebook --ip 0.0.0.0 --no-browser --allow-root --port=8889
+
+clean:
+	rm -rf ~/rng-*
+	rm -rf ./models/*
