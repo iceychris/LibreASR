@@ -167,7 +167,7 @@ class ASRLearner(Learner):
             CudaCallback(),
             TerminateOnNaNCallback(),
             SaveModelCallback(),
-            ReduceLROnPlateau(patience=1, min_lr=1e-6),
+            ReduceLROnPlateau(patience=1, min_lr=1e-5, factor=1.5),
         ]
         optim = conf["training"]["optimizer"].lower()
         if optim == "ranger":

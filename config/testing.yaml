@@ -195,7 +195,7 @@ model:
   encoder:
     rnn_type: "LSTM"
     num_layers: 6
-    dropout: 0.1
+    dropout: 0.05
     reduction_factor: 1
     reduction_factors: []
     layer_norm: false
@@ -203,14 +203,14 @@ model:
   predictor:
     rnn_type: "NBRC"
     num_layers: 2
-    dropout: 0.1
+    dropout: 0.05
     layer_norm: false
     use_tmp_state_pcent: 0.99
   joint:
     method: "concat"
     dropout: 0.0
   layer_norm: false
-  use_tmp_bos: true
+  use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
 
 
