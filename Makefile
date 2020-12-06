@@ -92,6 +92,12 @@ deploy_test:
 nb:
 	pip3 install jupyter && jupyter notebook --ip 0.0.0.0 --no-browser --allow-root --port=8889
 
+tensorboard:
+	nix-shell -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/f269d9a428497e2a2ec9027f2d613f128249f8ab.tar.gz \
+		--command "tensorboard --logdir ./runs/ --bind_all" \
+		-p python37Packages.tensorflow-tensorboard_2
+
 clean:
 	rm -rf ~/rng-*
-	rm -rf ./models/*
+	rm -rf ./models/model.pth
+

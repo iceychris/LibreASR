@@ -17,23 +17,23 @@ transforms:
       wrap: true
       partial: true
       args:
-        delta: 35
+        delta: 10
     - name: ChangeVolume
       wrap: true
       partial: true
       args:
-        pcent: 0.05
+        pcent: 0.03
     - name: MyAddNoise
       wrap: true
       partial: true
       args:
-        noise_level: 0.15
+        noise_level: 0.05
         color: 0
     - name: MySignalShifter
       wrap: true
       partial: true
       args:
-        max_time: 0.2
+        max_time: 0.1
         direction: 1
     - name: PadderCutter
     - name: TransformTime
@@ -47,13 +47,13 @@ transforms:
       wrap: true
       partial: true
       args:
-        num_masks: 5
+        num_masks: 4
         size: 2
     - name: MyMaskFreq
       wrap: true
       partial: true
       args:
-        num_masks: 5
+        num_masks: 4
         size: 4
 
     # reduce time dimension
@@ -100,7 +100,7 @@ datasets:
     # - tatoeba-en
 
 # percentage of each individual dataframe used
-#  (builder)
+#  (stage: builder)
 pcent:
     train: 1.0
     valid: 1.0
@@ -149,12 +149,12 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 12.0 # 5.0
+almaxs: 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 120
-y_max_words: 80
+y_max: 100
+y_max_words: 100
 
 
 ###
@@ -251,7 +251,7 @@ training:
 # batch size
 bs: 8 # 6
 # best english run: 10 * 16 = 160
-accumulate_n_batches: 64 # 128 # 96 # 7 # 24
+accumulate_n_batches: 10 # 128 # 96 # 7 # 24
 
 # mixed precision
 mp: false

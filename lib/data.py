@@ -37,15 +37,16 @@ from .transforms import update_tfms, update_tfms_multi, BatchNormalize
 
 # x: maximum batch capacity
 #  n stacked frames
-X_MAX = 8 * 6500 # 7750
+X_MAX = 8 * 9000 # 6000 # 6500 # 7750
 
 # y: maximum batch capacity
 #  n BPE tokens
-Y_MAX = 8 * 85
+Y_MAX = 8 * 90 # 85
+Y_MAX_ONE = 90
 
 # bounded batch sizes
 BS_MIN = 4
-BS_MAX = 24
+BS_MAX = 32
 BS_VALID = 8
 
 # x: time dimension
@@ -151,23 +152,25 @@ class DynamicBucketingDL(TfmdDL):
         chunks = [sorted(s, key=lambda i: self.res[i], reverse=True) for s in chunks]
 
         # variable batch bucketing
-        def is_adding_one_okay(xlen, ylen, xmax, bs):
+        def is_adding_one_okay(xlen, ylen, xmax, ymax, bs):
             xmaxok = xlen <= X_MAX
             ymaxok = ylen <= Y_MAX
-            multok = bs * xmax <= X_MAX
+            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE
             bsok = bs <= BS_MAX
             return xmaxok and ymaxok and multok and bsok
 
         batches = []
         xmax = 0.0
+        ymax = 0.0
         xlen = 0.0
         ylen = 0.0
         batch = []
         for chunk in chunks:
             for i, one in enumerate(chunk):
                 x, y = int(self.res[one]), int(self.res_y[one])
-                if is_adding_one_okay(xlen + x, ylen + y, max(xmax, x), len(batch) + 1):
+                if is_adding_one_okay(xlen + x, ylen + y, max(xmax, x), max(ymax, y), len(batch) + 1):
                     xmax = max(xmax, x)
+                    ymax = max(ymax, y)
                     xlen += x
                     ylen += y
                     # print("+", one)
@@ -176,6 +179,7 @@ class DynamicBucketingDL(TfmdDL):
                     if len(batch) > 0:
                         batches.append(batch)
                     xmax = x
+                    ymax = y
                     xlen = x
                     ylen = y
                     # print("+", one)
