@@ -87,17 +87,26 @@ dataset_paths:
     common-voice-fr: "/data/stt/data/common-voice/fr"
     yt-en: "/data/stt/data/yt/en/en/data"
     yt-de: "/data/stt/data/yt/de/de"
+    yt-fr: "/data/stt/data/yt/fr"
 
 # selected datasets
 datasets:
-    # - common-voice-de
-    # - yt-de
-  - yt-en
-  - librispeech-0
+
+    # | en
+    # - common-voice-en
+    # - yt-en
+    # - librispeech-0
     # - librispeech-1
     # - librispeech-2
-  - common-voice-en
     # - tatoeba-en
+
+    # | de
+    # - common-voice-de
+    # - yt-de
+
+    # | fr
+    - common-voice-fr
+    - yt-fr
 
 # percentage of each individual dataframe used
 #  (stage: builder)
@@ -149,11 +158,11 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 9.0
+almaxs: 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 100
+y_max: 60 # 100
 y_max_words: 100
 
 
