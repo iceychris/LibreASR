@@ -83,10 +83,14 @@ def test(
     _wer = np.array(_wers).mean()
 
     # maybe save best
-    if _wer < self.best_wer:
-        self.save("best_wer", with_opt=True)
-        self.best_wer = _wer
-        print("New best WER saved:", _wer)
+    if hasattr(self, "best_wer"):
+        if _wer < self.best_wer:
+            if save_best:
+                self.save("best_wer", with_opt=True)
+                print("New best WER saved:", _wer)
+            else:
+                print("New best WER:", _wer)
+            self.best_wer = _wer
 
     # plot lens
     # plt.hist(_xlens, bins=20)
