@@ -43,6 +43,31 @@
 docker run -it -p 8080:8080 iceychris/libreasr:latest
 ```
 
+The output looks like this:
+
+```
+make sde &
+make sen &
+make b
+make[1]: Entering directory '/workspace'
+python3 -u api-server.py de
+make[1]: Entering directory '/workspace'
+python3 -u api-bridge.py
+make[1]: Entering directory '/workspace'
+python3 -u api-server.py en
+[api-bridge] running on :8080
+[quantization] LM done.
+[quantization] LM done.
+[LM] loaded.
+[LM] loaded.
+[quantization] Transducer done.
+[Inference] Model and Pipeline set up.
+[api-server] gRPC server running on [::]:50052 language de
+[quantization] Transducer done.
+[Inference] Model and Pipeline set up.
+[api-server] gRPC server running on [::]:50051 language en
+```
+
 Head your browser to http://localhost:8080/
 
 
@@ -114,7 +139,7 @@ or use [this notebook](libreasr-lm.ipynb).
 ## Contributing
 
 Feel free to [open an issue](https://github.com/iceychris/LibreASR/issues/new),
-[create a pull request](https://github.com/iceychris/LibreASR/pulls) or
+[create a pull request](https://github.com/iceychris/LibreASR/pulls) and
 [join the Discord](https://discord.gg/wrcjdv9ZrR).
 
 You may also contribute by training a large model for longer.

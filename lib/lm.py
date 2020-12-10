@@ -3,7 +3,7 @@ import torch.quantization
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils import standardize
+from .utils import standardize, maybe_quantize
 
 
 ALPHA = 0.1
@@ -90,9 +90,7 @@ def load_lm(conf, lang):
     lm.eval()
 
     # quantize
-    lm = torch.quantization.quantize_dynamic(
-        lm, {torch.nn.LSTM, torch.nn.Linear}, dtype=torch.qint8
-    )
+    lm = maybe_quantize(lm)
     lm.eval()
 
     return lm

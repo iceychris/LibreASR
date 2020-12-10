@@ -42,6 +42,6 @@ def load_stuff(lang):
     x_tfm = Pipeline(preload_tfms(tfms[0], tfm_args))
     x_tfm_stream = Pipeline(preload_tfms(tfms[1], tfm_args))
 
-    print("Model and Pipeline set up.")
+    print("[Inference] Model and Pipeline set up.")
 
     return conf, lang, m, x_tfm, x_tfm_stream

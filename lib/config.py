@@ -137,9 +137,9 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     if inference and conf["lm"]["enable"]:
         try:
             lm = load_lm(conf, lang_name)
-            print("LM: loaded.")
+            print("[LM] loaded.")
         except:
-            print("LM: Failed to load.")
+            print("[LM] Failed to load.")
 
     # grab model
     m = Transducer.from_config(conf, lang)

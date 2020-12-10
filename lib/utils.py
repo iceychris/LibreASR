@@ -188,3 +188,19 @@ def sanitize_str(o):
     # add space at beginning (for BPE)
     o = " " + o
     return o
+
+
+def maybe_quantize(model, debug=True):
+    name = model.__class__.__name__
+    try:
+        model = torch.quantization.quantize_dynamic(
+            model, {torch.nn.LSTM, torch.nn.Linear}, dtype=torch.qint8
+        )
+        if debug:
+            print(f"[quantization] {name} done.")
+    except:
+        if debug:
+            print(
+                f"[quantization] {name} failed. Might lead to degraded model performance."
+            )
+    return model
