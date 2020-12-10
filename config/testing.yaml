@@ -17,12 +17,12 @@ transforms:
       wrap: true
       partial: true
       args:
-        delta: 25
+        delta: 10
     - name: ChangeVolume
       wrap: true
       partial: true
       args:
-        pcent: 0.05
+        pcent: 0.03
     - name: MyAddNoise
       wrap: true
       partial: true
@@ -94,20 +94,17 @@ datasets:
     # - yt-de
   - yt-en
   - librispeech-0
-  - librispeech-1
-  - librispeech-2
+    # - librispeech-1
+    # - librispeech-2
   - common-voice-en
-  - tatoeba-en
+    # - tatoeba-en
 
 # percentage of each individual dataframe used
-datasets_pcent: 1.0
-
-# percentage of data used
-pcent: 1.0
-
-# validation split
-# 1%
-valid_pcent: 0.01
+#  (stage: builder)
+pcent:
+    train: 1.0
+    valid: 1.0
+    test: 1.0
 
 
 ###
@@ -152,12 +149,12 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 12.0 # 5.0
+almaxs: 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 120
-y_max_words: 80
+y_max: 100
+y_max_words: 100
 
 
 ###
@@ -193,11 +190,12 @@ model:
   embed_sz: 512
   hidden_sz: 1024
   out_sz: 1024
+  joint_sz: 1024
   vocab_sz: 2048
   encoder:
     rnn_type: "LSTM"
     num_layers: 6
-    dropout: 0.3
+    dropout: 0.05
     reduction_factor: 1
     reduction_factors: []
     layer_norm: false
@@ -205,15 +203,15 @@ model:
   predictor:
     rnn_type: "NBRC"
     num_layers: 2
-    dropout: 0.3
+    dropout: 0.05
     layer_norm: false
     use_tmp_state_pcent: 0.99
   joint:
     method: "concat"
     dropout: 0.0
   layer_norm: false
-  use_tmp_bos: true
-  use_tmp_bos_pcent: 0.1
+  use_tmp_bos: false
+  use_tmp_bos_pcent: 0.2
 
 
 ###
@@ -227,11 +225,15 @@ norm_file: "./tmp/norm.pt"
 # ascending data length?
 ascending: True
 
-# whether to sort batches (order) by size or not (SortedDL)
+# whether to sort batches (order) by size or not
+#  DataLoader
 shuffle: True
 
 # shuffle at builder stage
-shuffle_builder: True
+shuffle_builder:
+    train: True
+    valid: True
+    test: True
 
 
 ###
@@ -249,7 +251,7 @@ training:
 # batch size
 bs: 8 # 6
 # best english run: 10 * 16 = 160
-accumulate_n_batches: 64 # 7 # 24
+accumulate_n_batches: 10 # 128 # 96 # 7 # 24
 
 # mixed precision
 mp: false
@@ -265,11 +267,11 @@ wanted_vocab_sz: 2048
 seed: 42
 
 # CPU workers
-num_workers: 4
+num_workers: 3
 
 # testing
 tensorboard: true
-wandb: true
+wandb: false # true
 tests_per_epoch: 8
 
 # language model

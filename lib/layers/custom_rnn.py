@@ -221,13 +221,14 @@ class CustomRNN(nn.Module):
             residual = inp
 
             new_states.append(new_state)
-        if len(new_states[0]) == 2:
-            self.cache[bs] = [
-                (h.detach().contiguous(), c.detach().contiguous())
-                for (h, c) in new_states
-            ]
-        else:
-            self.cache[bs] = [h.detach() for h in new_states]
+        if self.training:
+            if len(new_states[0]) == 2:
+                self.cache[bs] = [
+                    (h.detach().contiguous(), c.detach().contiguous())
+                    for (h, c) in new_states
+                ]
+            else:
+                self.cache[bs] = [h.detach() for h in new_states]
         return x, new_states
 
 

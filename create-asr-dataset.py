@@ -10,13 +10,16 @@ import numpy as np
 import torch
 import torchaudio
 
+# fastai2_audio
 # add flac to supported audio types
 import mimetypes
-
 mimetypes.types_map[".flac"] = "audio/flac"
-
-# fastai2_audio
 from fastai2_audio.core.all import get_audio_files
+
+from lib.utils import sanitize_str
+
+
+PRINT_DROP = False
 
 
 def str2bool(v):
@@ -56,7 +59,7 @@ def process_one(file, get_labels):
         pass
     finally:
         if len(rows) == 0:
-            xstart, xlen, label, ylen, bad = 0, 0, "", 0, 0, True
+            xstart, xlen, label, ylen, sr, bad = 0, 0, "", 0, -1, True
             rows.append((str(file.absolute()), xstart, xlen, label, ylen, sr, bad))
     return rows
 
@@ -239,6 +242,7 @@ if __name__ == "__main__":
             vtt_blocks = list(chunks(vtt_all, block_size))
 
             transcripts = []
+            printed = False
             for i, vtt in enumerate(vtt_blocks):
                 if len(vtt) < 2:
                     continue
@@ -271,8 +275,15 @@ if __name__ == "__main__":
                 transcript = transcript.replace("  ", " ")
 
                 # sanity checks
-                if start >= duration or (end - start) <= 0.0:
-                    print("drop", start, end, duration)
+                sanitized = sanitize_str(transcript)
+                if start >= duration or (end - start) <= 0.0 or len(sanitized) < 3:
+                    if PRINT_DROP:
+                        print("drop", file.stem, start, end, duration, vtt[0].start, vtt[-1].end, sanitized)
+                    continue
+
+                # keep automatic captions (drop closed captions)
+                if int(end-start) % 1000 == 0:
+                    # print("drop", file.stem, "closed captions")
                     continue
 
                 # add span
@@ -280,7 +291,7 @@ if __name__ == "__main__":
 
             return transcripts
 
-    # spawn a pool
+# spawn a pool
     p = multiprocessing.Pool(args.workers)
     bads = 0
     with tqdm.tqdm(total=len(files)) as t:
@@ -289,17 +300,21 @@ if __name__ == "__main__":
         ):
 
             # iterate through labels
+            data = None
             for tpl in tpls:
 
                 # count bads
                 if tpl[-1]:
                     bads += 1
+                else:
+                    data = tpl
 
-                # print info
-                if i % int(args.print_every_pcent * 0.01 * len(files) + 1) == 0:
+            # print info
+            if i % int(args.print_every_pcent * 0.01 * len(files) + 1) == 0:
+                if data:
                     t.write("> data: " + str(tpl))
-                    t.write(f"> df len: {len(df)}")
-                    t.write("> pcent bad: " + f"{int((bads / (i+1)) * 100.)}%")
+                t.write(f"> df len: {len(df)}")
+                t.write("> pcent bad: " + f"{int((bads / (len(df)+len(tpls))) * 100.)}%")
 
             # insert into df
             df = df.append(

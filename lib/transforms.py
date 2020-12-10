@@ -77,6 +77,7 @@ class OpenAudioSpan(Transform):
         if sr_csv == -1:
             # determine sr while loading
             use_sr_csv = False
+            warn("OpenAudioSpan: sr_csv = -1")
         else:
             # sr is fixed
             use_sr_csv = True
@@ -87,8 +88,8 @@ class OpenAudioSpan(Transform):
             xstart = int((tpl.xstart / 1000.0) * sr)
         else:
             xstart = 0
-        pad = int(0.2 * sr)
-        if int(tpl.xlen) == -1:
+        pad = int(0.5 * sr)
+        if int(tpl.xlen) == -1 or math.isnan(tpl.xlen):
             xlen = 800000
         else:
             xlen = int((tpl.xlen / 1000.0) * sr) + pad

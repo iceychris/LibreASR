@@ -110,7 +110,7 @@ class Encoder(Module):
 
 
 class Joint(Module):
-    def __init__(self, out_sz, vocab_sz, joint_method):
+    def __init__(self, out_sz, joint_sz, vocab_sz, joint_method):
         self.joint_method = joint_method
         if joint_method == "add":
             input_sz = out_sz
@@ -119,7 +119,7 @@ class Joint(Module):
         else:
             raise Exception("No such joint_method")
         self.joint = nn.Sequential(
-            nn.Linear(input_sz, out_sz), nn.Tanh(), nn.Linear(out_sz, vocab_sz),
+            nn.Linear(input_sz, joint_sz), nn.Tanh(), nn.Linear(joint_sz, vocab_sz),
         )
 
     def param_groups(self):
@@ -191,6 +191,7 @@ class Transducer(Module):
         vocab_sz,
         hidden_sz,
         out_sz,
+        joint_sz,
         lang,
         l_e=6,
         l_p=2,
@@ -215,7 +216,7 @@ class Transducer(Module):
             out_sz=out_sz,
             **predictor_kwargs,
         )
-        self.joint = Joint(out_sz, vocab_sz, joint_method)
+        self.joint = Joint(out_sz, joint_sz, vocab_sz, joint_method)
         self.lang = lang
         self.blank = blank
         # TODO: dont hardcode
@@ -236,6 +237,7 @@ class Transducer(Module):
             conf["model"]["vocab_sz"],
             conf["model"]["hidden_sz"],
             conf["model"]["out_sz"],
+            conf["model"]["joint_sz"],
             lang,
             p_e=conf["model"]["encoder"]["dropout"],
             p_p=conf["model"]["predictor"]["dropout"],
