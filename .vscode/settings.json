@@ -1,0 +1,8 @@
+{
+    "cSpell.enableFiletypes": [
+        "!python",
+        "!restructuredtext"
+    ],
+    "restructuredtext.linter.disabled": true,
+    "restructuredtext.preview.sphinx.disabled": true
+}

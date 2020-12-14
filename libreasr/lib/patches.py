@@ -11,7 +11,7 @@ from fastai2.torch_basics import *
 from fastai2.data.all import *
 from fastai2_audio.core.signal import AudioTensor
 
-from .metrics import cer, wer
+from libreasr.lib.metrics import cer, wer
 from IPython.core.debugger import set_trace
 
 

@@ -1,5 +1,5 @@
-FROM asr-pytorch
-# FROM iceychris/libreasr:latest-x86-cpu
+# FROM asr-pytorch
+FROM iceychris/libreasr:base-x86-cpu
 
 COPY . /workspace
 

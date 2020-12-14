@@ -10,5 +10,5 @@ import torch.quantization
 from fastcore.transform import Pipeline
 from fastai2_audio.core.all import AudioTensor
 
-from .config import *
-from .data import preload_tfms
+from libreasr.lib.config import *
+from libreasr.lib.data import preload_tfms

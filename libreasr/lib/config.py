@@ -7,13 +7,13 @@ from pathlib import Path
 import torch
 import yaml
 
-from .utils import n_params, what, wrap_transform
-from .language import get_language
-from .builder import ASRDatabunchBuilder
-from .data import ASRDatabunch
-from .models import Transducer, CTCModel
-from .learner import ASRLearner
-from .lm import load_lm
+from libreasr.lib.utils import n_params, what, wrap_transform
+from libreasr.lib.language import get_language
+from libreasr.lib.builder import ASRDatabunchBuilder
+from libreasr.lib.data import ASRDatabunch
+from libreasr.lib.models import Transducer, CTCModel
+from libreasr.lib.learner import ASRLearner
+from libreasr.lib.lm import load_lm
 
 
 def update(d, u):
@@ -147,7 +147,7 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
 
     if inference:
         # load weights
-        from .model_utils import load_asr_model
+        from libreasr.lib.model_utils import load_asr_model
 
         load_asr_model(m, lang_name, lang, conf["cuda"]["device"], lm=lm)
         m.lm = lm

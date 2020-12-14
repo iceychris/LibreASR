@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils import sanitize_str
+from libreasr.lib.utils import sanitize_str
 
 CSV = {
     "train": "asr-dataset-train.csv",

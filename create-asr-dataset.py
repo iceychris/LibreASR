@@ -16,7 +16,7 @@ import mimetypes
 mimetypes.types_map[".flac"] = "audio/flac"
 from fastai2_audio.core.all import get_audio_files
 
-from lib.utils import sanitize_str
+from libreasr.lib.utils import sanitize_str
 
 
 PRINT_DROP = False

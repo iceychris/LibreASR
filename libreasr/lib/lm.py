@@ -3,7 +3,7 @@ import torch.quantization
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils import standardize, maybe_quantize
+from libreasr.lib.utils import standardize, maybe_quantize
 
 
 ALPHA = 0.1

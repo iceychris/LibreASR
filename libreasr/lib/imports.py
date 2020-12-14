@@ -53,17 +53,17 @@ import matplotlib as mpl
 mpl.rcParams["figure.dpi"] = 175
 
 # local
-from lib.config import parse_and_apply_config
-from lib.models import *
-from lib.utils import *
-from lib.callbacks import *
-from lib.transforms import *
-from lib.language import get_language
-from lib.loss import *
-from lib.metrics import *
-from lib.data import *
-from lib.decoders import *
-from lib.builder import ASRDatabunchBuilder
+from libreasr.lib.config import parse_and_apply_config
+from libreasr.lib.models import *
+from libreasr.lib.utils import *
+from libreasr.lib.callbacks import *
+from libreasr.lib.transforms import *
+from libreasr.lib.language import get_language
+from libreasr.lib.loss import *
+from libreasr.lib.metrics import *
+from libreasr.lib.data import *
+from libreasr.lib.decoders import *
+from libreasr.lib.builder import ASRDatabunchBuilder
 
 # apply patches
-import lib.patches
+import libreasr.lib.patches

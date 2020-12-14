@@ -1,0 +1,8 @@
+FROM iceychris/libreasr:latest
+
+RUN pip3 install sphinx sphinx_rtd_theme recommonmark
+
+RUN useradd -m chris
+USER chris
+
+CMD ["/bin/bash"]

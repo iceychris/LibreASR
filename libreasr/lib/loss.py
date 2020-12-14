@@ -27,7 +27,7 @@ import torchaudio
 import numpy as np
 import pandas as pd
 
-from .utils import *
+from libreasr.lib.utils import *
 
 
 def get_loss_func(

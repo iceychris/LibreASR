@@ -32,7 +32,7 @@ from scipy.signal import decimate, resample_poly
 
 import torchaudio
 
-from .utils import *
+from libreasr.lib.utils import *
 
 DUMMY_AUDIO = AudioTensor(torch.randn(1, 16000) / 100.0, 16000)
 DUMMY_TEXT = Text(" dummy ")

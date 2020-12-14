@@ -17,7 +17,8 @@ format:
 # Docker
 ###
 
-DOCKER_IMAGE=libreasr
+# DOCKER_IMAGE=asr-pytorch
+DOCKER_IMAGE=iceychris/libreasr:latest
 DOCKER_SHELL=/bin/bash
 
 drun:
@@ -88,6 +89,21 @@ deploy_test:
 ###
 # dev
 ###
+
+DEV_IMAGE=iceychris/libreasr:dev
+
+dev-build:
+	docker build -t $(DEV_IMAGE) -f docker/Dockerfile.dev .
+
+dev:
+	docker run -it --rm \
+		--user 1000:100 \
+		-e NUMBA_CACHE_DIR=/tmp \
+		-p 50051:50051 \
+		-p 8889:8889 \
+		-p 8080:8080 \
+		-v $(shell pwd)/:/workspace \
+		$(DEV_IMAGE) $(DOCKER_SHELL) 
 
 nb:
 	pip3 install jupyter && jupyter notebook --ip 0.0.0.0 --no-browser --allow-root --port=8889

@@ -10,7 +10,7 @@ import torch
 
 from fastai2.learner import load_model
 
-from .utils import maybe_quantize
+from libreasr.lib.utils import maybe_quantize
 
 
 _PATH_ARCHIVE = Path("libreasr-model.tar.gz")

@@ -13,9 +13,9 @@ from fastai2.optimizer import Adam, Lamb, Lookahead, ranger
 
 from IPython.core.debugger import set_trace
 
-from .callbacks import Tensorboard
-from .loss import get_loss_func
-from .optimizer import AdaHessian, Apollo, ranger_adabelief
+from libreasr.lib.callbacks import Tensorboard
+from libreasr.lib.loss import get_loss_func
+from libreasr.lib.optimizer import AdaHessian, Apollo, ranger_adabelief
 
 
 HESSIAN_EVERY = 50

@@ -16,9 +16,9 @@ from fastai2.learner import CancelBatchException
 
 from IPython.core.debugger import set_trace
 
-from .utils import *
-from .layers import *
-from .lm import LMFuser
+from libreasr.lib.utils import *
+from libreasr.lib.layers import *
+from libreasr.lib.lm import LMFuser
 
 
 class ResidualAdapter(Module):

@@ -9,8 +9,8 @@ import grpc
 
 import interfaces.libreasr_pb2 as ap
 import interfaces.libreasr_pb2_grpc as apg
-from lib.inference import *
-from lib.utils import tensorize
+from libreasr.lib.inference import *
+from libreasr.lib.utils import tensorize
 
 
 WORKERS = 4

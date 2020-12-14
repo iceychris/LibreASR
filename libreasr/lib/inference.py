@@ -1,4 +1,4 @@
-from .inference_imports import *
+from libreasr.lib.inference_imports import *
 
 # we need
 # - config
