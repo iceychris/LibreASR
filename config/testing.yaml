@@ -85,9 +85,11 @@ dataset_paths:
     common-voice-en: "/data/stt/data/common-voice/en"
     common-voice-de: "/data/stt/data/common-voice/de"
     common-voice-fr: "/data/stt/data/common-voice/fr"
+    common-voice-es: "/data/stt/data/common-voice/es"
     yt-en: "/data/stt/data/yt/en/en/data"
     yt-de: "/data/stt/data/yt/de/de"
     yt-fr: "/data/stt/data/yt/fr"
+    yt-es: "/data/stt/data/yt/es"
 
 # selected datasets
 datasets:
@@ -105,8 +107,12 @@ datasets:
     # - yt-de
 
     # | fr
-    - common-voice-fr
-    - yt-fr
+    # - common-voice-fr
+    # - yt-fr
+
+    # | es
+    - common-voice-es
+    - yt-es
 
 # percentage of each individual dataframe used
 #  (stage: builder)

@@ -37,7 +37,7 @@ from .transforms import update_tfms, update_tfms_multi, BatchNormalize
 
 # x: maximum batch capacity
 #  n stacked frames
-X_MAX = 8 * 9000 # 6000 # 6500 # 7750
+X_MAX = 8 * 7500 # 9000 # 6000 # 6500 # 7750
 
 # y: maximum batch capacity
 #  n BPE tokens
