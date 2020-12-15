@@ -158,3 +158,8 @@ You may also contribute by training a large model for longer.
 * [1ytic/warp-rnnt](https://github.com/1ytic/warp-rnnt)
 
 * [VKCOM/YouTokenToMe](https://github.com/VKCOM/YouTokenToMe)
+
+
+## Stargazers
+
+[![Stargazers over time](https://starchart.cc/iceychris/LibreASR.svg)](https://starchart.cc/iceychris/LibreASR)
