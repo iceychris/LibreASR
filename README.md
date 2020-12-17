@@ -3,10 +3,19 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/iceychris/libreasr/actions"><img src="https://github.com/iceychris/libreasr/workflows/Docker%20Images/badge.svg"></a>
-  <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+  <a href='https://libreasr.readthedocs.io/en/latest/?badge=latest'>
+    <img src='https://readthedocs.org/projects/libreasr/badge/?version=latest' alt='Documentation Status' />
+  </a>
+  <a href="https://github.com/iceychris/libreasr/actions">
+    <img src="https://github.com/iceychris/libreasr/workflows/Docker%20Images/badge.svg">
+  </a>
+  <a href="https://github.com/psf/black">
+    <img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg">
+  </a>
   <img alt="License: MIT" src="https://img.shields.io/github/license/iceychris/libreasr.svg">
-  <a href="https://discord.gg/wrcjdv9ZrR"><img alt="Discord Shield" src="https://discordapp.com/api/guilds/777217547774459925/widget.png?style=shield"></a>
+  <a href="https://discord.gg/wrcjdv9ZrR">
+    <img alt="Discord Shield" src="https://discordapp.com/api/guilds/777217547774459925/widget.png?style=shield">
+  </a>
 </p>
 
 <h3 align="center">
