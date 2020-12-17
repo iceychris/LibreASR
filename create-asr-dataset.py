@@ -13,6 +13,7 @@ import torchaudio
 # fastai2_audio
 # add flac to supported audio types
 import mimetypes
+
 mimetypes.types_map[".flac"] = "audio/flac"
 from fastai2_audio.core.all import get_audio_files
 
@@ -278,11 +279,20 @@ if __name__ == "__main__":
                 sanitized = sanitize_str(transcript)
                 if start >= duration or (end - start) <= 0.0 or len(sanitized) < 3:
                     if PRINT_DROP:
-                        print("drop", file.stem, start, end, duration, vtt[0].start, vtt[-1].end, sanitized)
+                        print(
+                            "drop",
+                            file.stem,
+                            start,
+                            end,
+                            duration,
+                            vtt[0].start,
+                            vtt[-1].end,
+                            sanitized,
+                        )
                     continue
 
                 # keep automatic captions (drop closed captions)
-                if int(end-start) % 1000 == 0:
+                if int(end - start) % 1000 == 0:
                     # print("drop", file.stem, "closed captions")
                     continue
 
@@ -291,7 +301,7 @@ if __name__ == "__main__":
 
             return transcripts
 
-# spawn a pool
+    # spawn a pool
     p = multiprocessing.Pool(args.workers)
     bads = 0
     with tqdm.tqdm(total=len(files)) as t:
@@ -314,7 +324,9 @@ if __name__ == "__main__":
                 if data:
                     t.write("> data: " + str(tpl))
                 t.write(f"> df len: {len(df)}")
-                t.write("> pcent bad: " + f"{int((bads / (len(df)+len(tpls))) * 100.)}%")
+                t.write(
+                    "> pcent bad: " + f"{int((bads / (len(df)+len(tpls))) * 100.)}%"
+                )
 
             # insert into df
             df = df.append(

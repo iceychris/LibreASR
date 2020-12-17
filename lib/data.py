@@ -37,11 +37,11 @@ from .transforms import update_tfms, update_tfms_multi, BatchNormalize
 
 # x: maximum batch capacity
 #  n stacked frames
-X_MAX = 8 * 7500 # 9000 # 6000 # 6500 # 7750
+X_MAX = 8 * 7500  # 9000 # 6000 # 6500 # 7750
 
 # y: maximum batch capacity
 #  n BPE tokens
-Y_MAX = 8 * 90 # 85
+Y_MAX = 8 * 90  # 85
 Y_MAX_ONE = 90
 
 # bounded batch sizes
@@ -168,7 +168,9 @@ class DynamicBucketingDL(TfmdDL):
         for chunk in chunks:
             for i, one in enumerate(chunk):
                 x, y = int(self.res[one]), int(self.res_y[one])
-                if is_adding_one_okay(xlen + x, ylen + y, max(xmax, x), max(ymax, y), len(batch) + 1):
+                if is_adding_one_okay(
+                    xlen + x, ylen + y, max(xmax, x), max(ymax, y), len(batch) + 1
+                ):
                     xmax = max(xmax, x)
                     ymax = max(ymax, y)
                     xlen += x

@@ -53,7 +53,7 @@ if __name__ == "__main__":
     df_path = p / "asr-dataset.csv"
     path_train = p / "asr-dataset-train.csv"
     path_valid = p / "asr-dataset-valid.csv"
-    path_test  = p / "asr-dataset-test.csv"
+    path_test = p / "asr-dataset-test.csv"
 
     # check if exists
     if df_path.exists():
@@ -63,7 +63,9 @@ if __name__ == "__main__":
         raise Exception("asr-dataset.csv does not exist")
 
     # first, train and non_train
-    train, non_train = train_test_split(df, test_size=args.split * 2., random_state=args.seed)
+    train, non_train = train_test_split(
+        df, test_size=args.split * 2.0, random_state=args.seed
+    )
 
     # then, valid and test
     valid, test = train_test_split(non_train, test_size=0.5, random_state=args.seed)
