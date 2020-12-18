@@ -39,7 +39,7 @@ def open_config(*args, path="./config/testing.yaml", **kwargs):
 
 
 def parse_transforms(conf, inference):
-    mod = import_module("lib.transforms")
+    mod = import_module("libreasr.lib.transforms")
     tfms = []
     if inference:
         conf_tfms = [
