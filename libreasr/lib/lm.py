@@ -1,3 +1,7 @@
+"""
+Fused Language Model implementation.
+"""
+
 import torch
 import torch.quantization
 import torch.nn as nn

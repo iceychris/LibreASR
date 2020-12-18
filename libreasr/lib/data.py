@@ -1,3 +1,7 @@
+"""
+Contains DataLoaders and batch collation functions.
+"""
+
 from functools import partial
 import multiprocessing
 import math

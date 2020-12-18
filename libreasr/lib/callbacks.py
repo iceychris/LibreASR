@@ -1,3 +1,7 @@
+"""
+Contains Tensorboard Callback which performs testing while training.
+"""
+
 from fastai2.fp16_utils import convert_network
 from fastai2.torch_core import to_float
 from fastai2.learner import Callback

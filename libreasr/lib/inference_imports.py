@@ -1,3 +1,7 @@
+"""
+Imports for inference.
+"""
+
 from collections import OrderedDict
 import sys
 import time

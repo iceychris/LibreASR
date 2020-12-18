@@ -1,3 +1,7 @@
+"""
+Utilities for bootstraping inference.
+"""
+
 from libreasr.lib.inference_imports import *
 
 # we need

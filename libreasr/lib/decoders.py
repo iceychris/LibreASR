@@ -1,3 +1,7 @@
+"""
+[Unused] incomplete implementation of a CTC Decoder.
+"""
+
 from itertools import groupby
 from operator import itemgetter
 

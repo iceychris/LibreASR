@@ -1,3 +1,7 @@
+"""
+Utility functions for bootstraping training and inference.
+"""
+
 import os
 from functools import partial
 from importlib import import_module

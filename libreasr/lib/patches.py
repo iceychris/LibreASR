@@ -1,3 +1,7 @@
+"""
+Contains `test` function for evaluating performance while training.
+"""
+
 from functools import partial
 
 # from tqdm import tqdm_notebook as tqdm

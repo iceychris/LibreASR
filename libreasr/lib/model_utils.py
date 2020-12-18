@@ -1,3 +1,7 @@
+"""
+Utilities for persisting models.
+"""
+
 import tarfile
 from pathlib import Path
 import os

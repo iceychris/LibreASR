@@ -1,3 +1,7 @@
+"""
+Audio and Text Transformations and Augmentations
+"""
+
 from functools import partial
 import multiprocessing
 import math

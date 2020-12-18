@@ -1,3 +1,7 @@
+"""
+Adapt fastai Learner for ASR Modeling.
+"""
+
 from functools import partial
 import math
 import gc

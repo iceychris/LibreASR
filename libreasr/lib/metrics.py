@@ -1,3 +1,7 @@
+"""
+`wer` and `cer` metric functions
+"""
+
 import editdistance
 from jiwer import wer as _wer
 

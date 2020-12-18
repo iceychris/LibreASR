@@ -1,3 +1,7 @@
+"""
+Common models including RNN-Transducer implementation.
+"""
+
 import operator
 import time
 import random

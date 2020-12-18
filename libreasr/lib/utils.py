@@ -1,3 +1,7 @@
+"""
+Useful little functions
+"""
+
 import traceback
 from collections import OrderedDict
 import re
