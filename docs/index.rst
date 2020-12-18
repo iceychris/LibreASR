@@ -6,6 +6,15 @@
 Welcome to LibreASR's documentation!
 ====================================
 
+.. toctree::
+   :maxdepth: 2
+
+   docs.md
+
+
+API Reference
+=============
+
 .. autosummary::
    :toctree: _autosummary
    :caption: API Reference
@@ -15,9 +24,9 @@ Welcome to LibreASR's documentation!
    libreasr
 
 
-.. Indices and tables
-.. ==================
+Indices and tables
+==================
 
-.. * :ref:`genindex`
-.. * :ref:`modindex`
-.. * :ref:`search`
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
