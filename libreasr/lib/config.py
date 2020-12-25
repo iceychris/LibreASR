@@ -11,7 +11,7 @@ from libreasr.lib.utils import n_params, what, wrap_transform
 from libreasr.lib.language import get_language
 from libreasr.lib.builder import ASRDatabunchBuilder
 from libreasr.lib.data import ASRDatabunch
-from libreasr.lib.models import Transducer, CTCModel
+from libreasr.lib.models import get_model
 from libreasr.lib.learner import ASRLearner
 from libreasr.lib.lm import load_lm
 
@@ -142,7 +142,8 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
             print("[LM] Failed to load.")
 
     # grab model
-    m = Transducer.from_config(conf, lang)
+    # m = Transducer.from_config(conf, lang)
+    m = get_model(conf, lang)
     # print(n_params(m))
 
     if inference:

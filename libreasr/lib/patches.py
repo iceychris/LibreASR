@@ -99,7 +99,7 @@ def test(
     # plt.show()
 
     last = f"true: {_true} | pred: {_pred}"
-    print(f"CER={_cer:.3f} | WER={_wer:.3f} | {last}")
+    print(f"CER={_cer:.4f} | WER={_wer:.4f} | {last}")
     yield {
         "metrics/mean_alignment_score": np.array(aligns).mean(),
         "metrics/mean_cer": _cer,

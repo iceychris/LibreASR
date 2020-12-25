@@ -109,33 +109,6 @@ class Encoder(Module):
         return x
 
 
-class Joint(Module):
-    def __init__(self, out_sz, joint_sz, vocab_sz, joint_method):
-        self.joint_method = joint_method
-        if joint_method == "add":
-            input_sz = out_sz
-        elif joint_method == "concat":
-            input_sz = 2 * out_sz
-        else:
-            raise Exception("No such joint_method")
-        self.joint = nn.Sequential(
-            nn.Linear(input_sz, joint_sz), nn.Tanh(), nn.Linear(joint_sz, vocab_sz),
-        )
-
-    def param_groups(self):
-        return [p for p in self.parameters() if p.requires_grad]
-
-    def forward(self, h_pred, h_enc):
-        if self.joint_method == "add":
-            x = h_pred + h_enc
-        elif self.joint_method == "concat":
-            x = torch.cat((h_pred, h_enc), dim=-1)
-        else:
-            raise Exception("No such joint_method")
-        x = self.joint(x)
-        return x
-
-
 class Predictor(Module):
     def __init__(
         self,
@@ -183,6 +156,44 @@ class Predictor(Module):
         return x, state
 
 
+class Joint(Module):
+    def __init__(self, out_sz, joint_sz, vocab_sz, joint_method):
+        self.joint_method = joint_method
+        if joint_method == "add":
+            input_sz = out_sz
+        elif joint_method == "concat":
+            input_sz = 2 * out_sz
+        else:
+            raise Exception("No such joint_method")
+        self.joint = nn.Sequential(
+            nn.Linear(input_sz, joint_sz),
+            nn.Tanh(),
+            nn.Linear(joint_sz, vocab_sz),
+            nn.LogSoftmax(-1),
+        )
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, h_pred, h_enc):
+        if self.joint_method == "add":
+            x = h_pred + h_enc
+        elif self.joint_method == "concat":
+            x = torch.cat((h_pred, h_enc), dim=-1)
+        else:
+            raise Exception("No such joint_method")
+        # x = self.joint(x)
+        if self.training:
+            x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 2, x)
+        else:
+            x = self.joint(x)
+        return x
+
+
+def get_model(conf, *args, **kwargs):
+    return eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
+
+
 class Transducer(Module):
     def __init__(
         self,
@@ -221,7 +232,6 @@ class Transducer(Module):
         self.blank = blank
         # TODO: dont hardcode
         self.bos = 2
-        self.perf = perf
         self.mp = False
         self.bos_cache = {}
         self.use_tmp_bos = use_tmp_bos
@@ -230,8 +240,9 @@ class Transducer(Module):
         self.lm = None
 
     @staticmethod
-    def from_config(conf, lang, lm=None):
-        m = Transducer(
+    def from_config(conf, lang, lm=None, cls=None):
+        if cls is None: cls = Transducer
+        m = cls(
             conf["model"]["feature_sz"],
             conf["model"]["embed_sz"],
             conf["model"]["vocab_sz"],
@@ -271,15 +282,6 @@ class Transducer(Module):
         self.predictor.rnn_stack = self.predictor.rnn_stack.convert_to_gpu()
         return self
 
-    def start_perf(self):
-        if self.perf:
-            self.t = time.time()
-
-    def stop_perf(self, name="unknown"):
-        if self.perf:
-            t = (time.time() - self.t) * 1000.0
-            print(f"{name.ljust(10, ' ')} | {t:4.2f}ms")
-
     def grab_bos(self, y, yl, bs, device):
         if self.training and self.use_tmp_bos:
             r = random.random()
@@ -314,10 +316,8 @@ class Transducer(Module):
             x = x.half()
 
         # encoder
-        self.start_perf()
         x = x.reshape(x.size(0), x.size(1), -1)
         encoder_out = self.encoder(x, lengths=xl)
-        self.stop_perf("encoder")
 
         # N: batch size
         # T: n frames (time)
@@ -328,11 +328,9 @@ class Transducer(Module):
         # concat first bos (yconcat is y shifted right by 1)
         bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
         yconcat = torch.cat((bos, y), dim=1)
-        self.start_perf()
         # yl here because we want to omit the last label
         # in the resulting state (we had (yl + 1))
         predictor_out, _ = self.predictor(yconcat, lengths=yl)
-        self.stop_perf("predictor")
         U = predictor_out.size(1)
 
         # expand:
@@ -345,12 +343,7 @@ class Transducer(Module):
         # print(encoder_out.shape, predictor_out.shape)
 
         # joint & project
-        self.start_perf()
         joint_out = self.joint(predictor_out, encoder_out)
-        self.stop_perf("joint")
-
-        # log_softmax only when using rnnt of 1ytic
-        joint_out = F.log_softmax(joint_out, -1)
 
         return joint_out
 
@@ -411,7 +404,6 @@ class Transducer(Module):
                 joint_out = self.joint(_h_t_pred, _h_t_enc)
 
                 # decode one character
-                joint_out = F.log_softmax(joint_out, dim=-1)
                 extra["outs"].append(joint_out.clone())
                 prob, pred = joint_out.max(-1)
                 pred = int(pred)
@@ -426,6 +418,7 @@ class Transducer(Module):
                     # fuse with lm
                     joint_out, prob, pred = fuser.fuse(joint_out, prob, pred)
 
+                    # print(iters)
                     y_seq.append(pred)
                     y_one_char[0][0] = pred
 
@@ -509,7 +502,6 @@ class Transducer(Module):
             chunk = chunk[None]
 
             # forward pass encoder
-            self.start_perf()
             if encoder_state is None:
                 encoder_out, encoder_state = self.encoder(chunk, return_state=True)
             else:
@@ -517,9 +509,7 @@ class Transducer(Module):
                     chunk, state=encoder_state, return_state=True
                 )
             h_t_enc = encoder_out[0]
-            self.stop_perf("encoder")
 
-            self.start_perf()
 
             # loop over encoder states (t)
             y_seq = []
@@ -539,7 +529,6 @@ class Transducer(Module):
                     joint_out = self.joint(_h_t_pred, _h_t_enc)
 
                     # decode one character
-                    joint_out = F.log_softmax(joint_out, dim=-1)
                     prob, pred = joint_out.max(-1)
                     pred = int(pred)
 
@@ -570,7 +559,142 @@ class Transducer(Module):
             y = y + y_seq
             yield y, denumericalizer(y_seq), reset
 
-            self.stop_perf("joint + predictor")
+
+class ScheduledSamplingTransducer(Transducer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def from_config(*args, **kwargs):
+        return Transducer.from_config(*args, **kwargs, cls=ScheduledSamplingTransducer)
+
+    def forward(self, tpl, cache=True, epsilon=0.9):
+
+        # unpack
+        x, y, xl, yl = tpl
+        if self.mp:
+            x = x.half()
+
+        # encoder
+        x = x.reshape(x.size(0), x.size(1), -1)
+        encoder_out = self.encoder(x, lengths=xl)
+
+        # N: batch size
+        # T: n frames (time)
+        # U: n label tokens
+        # V: vocab size
+        # H: hidden features
+        N, T, H = encoder_out.size()
+        U = y.size(1)
+        V = self.vocab_sz
+        dtype, device = x.dtype, x.device
+
+        # frist
+        pred_input = self.grab_bos(y, yl, bs=N, device=device)
+        pred_output, pred_state = self.predictor(pred_input)
+        t_init = self.joint(pred_output.unsqueeze(1).expand(-1, T, -1, -1), encoder_out.unsqueeze(2))
+
+        # prepare vars
+        outs = []
+        predictions = []
+        strs = []
+
+        # check if sth is None
+        def ok(a):
+            if isinstance(a, list): return all([ok(x) for x in a])
+            return a is not None
+
+        # check if two things are the same
+        def eq(a, b):
+            if (a is None or b is None): return False
+            if isinstance(a, list):
+                return all([(x == y).all() for x, y in zip(a, b)])
+            return (a == b).all()
+
+        # memoize joint
+        mp, me = None, None
+        rj = None
+        def memo_joint(p, e):
+            nonlocal mp, me, rj
+            if ok([mp, me]) and ok(rj) and eq(mp, p) and eq(me, e):
+                return rj, False
+            rj = self.joint(p, e)
+            mp, me, = p, e
+            return rj, True
+
+        # memoize predictor
+        mpo, mps = None, None
+        rpo, rps = None, None
+        def memo_predictor(po, ps):
+            nonlocal mpo, mps, rpo, rps
+            if ok([mpo, mps, rpo, rps]) and eq(mpo, po) and eq(mps, ps):
+                return rpo, rps, False
+            rpo, rps = self.predictor(po, state=ps)
+            mpo, mps = po, ps
+            return rpo, rps, True
+
+        # iterate through time
+        for t in range(T):
+
+            # iterate through label
+            t_outs = []
+            for u in range(U):
+
+                # joint
+                if cache:
+                    joint_out, _ = memo_joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
+                else:
+                    joint_out = self.joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
+
+                # store for output
+                t_outs.append(joint_out)
+
+                # decode one character
+                prob, pred = joint_out.max(-1)
+
+                # set as next input
+                pred_input = pred[:, :, 0]
+
+                # advance predictor (output & state)
+                # issue: only advance predictor state
+                #        when a non-blank has been decoded
+                #        (use gather and where)...
+                if cache:
+                    new_pred_output, new_pred_state, changed = memo_predictor(
+                        pred_input, pred_state
+                    )
+                else:
+                    new_pred_output, new_pred_state = self.predictor(
+                        pred_input, state=pred_state
+                    )
+                    changed = True
+
+                if changed:
+                    # select non-blanks for next state
+                    pred_output = torch.where(pred == self.blank, pred_output, new_pred_output)
+                    # print(t, u, (pred == self.blank).sum())
+                    qpred = pred[None, :, 0]
+                    for i, (ps, nps) in enumerate(zip(pred_state, new_pred_state)):
+                        pred_state[i] = torch.where(qpred == self.blank, ps, nps)
+
+                # store prediction
+                predictions.append(pred[:, 0, 0])
+
+            t_outs = torch.cat([t_init, *t_outs], dim=2)
+            outs.append(t_outs)
+
+        # result tensor (N, T, U+1, V)
+        output = torch.cat(outs, dim=1)
+        output = output.contiguous()
+
+        # denumericalize
+        predictions = torch.stack(predictions, dim=1)
+        for p in predictions:
+            s = self.lang.denumericalize(p.cpu().numpy().tolist())
+            strs.append(s)
+            # print(s)
+
+        return output
 
 
 class CTCModel(Module):

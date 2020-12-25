@@ -103,22 +103,22 @@ datasets:
     # - tatoeba-en
 
     # | de
-    # - common-voice-de
-    # - yt-de
+    - common-voice-de
+    - yt-de
 
     # | fr
     # - common-voice-fr
     # - yt-fr
 
     # | es
-    - common-voice-es
-    - yt-es
+    # - common-voice-es
+    # - yt-es
 
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 1.0
-    valid: 1.0
+    train: 0.05 # 1.0
+    valid: 0.05 # 1.0
     test: 1.0
 
 
@@ -200,7 +200,8 @@ cpu:
 ###
 
 model:
-  name: Transducer
+  # name: Transducer
+  name: ScheduledSamplingTransducer
   feature_sz: 1280
   embed_sz: 512
   hidden_sz: 1024
@@ -266,7 +267,7 @@ training:
 # batch size
 bs: 8 # 6
 # best english run: 10 * 16 = 160
-accumulate_n_batches: 10 # 128 # 96 # 7 # 24
+accumulate_n_batches: 2 # 10
 
 # mixed precision
 mp: false
@@ -286,7 +287,7 @@ num_workers: 3
 
 # testing
 tensorboard: true
-wandb: false # true
+wandb: false
 tests_per_epoch: 8
 
 # language model
