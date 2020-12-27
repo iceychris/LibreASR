@@ -181,16 +181,18 @@ class Joint(Module):
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
             raise Exception("No such joint_method")
-        if self.training:
-            x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 2, x)
-        else:
-            x = self.joint(x)
+        # x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 2, x)
+        x = self.joint(x)
         if softmax:
             x = F.log_softmax(x, dim=-1)
         return x
 
 
 def get_model(conf, *args, **kwargs):
+    if conf["training"]["noisystudent"]:
+        teacher = eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
+        ns = NoisyStudent(teacher, Transducer.from_config(conf, *args, **kwargs))
+        return ns
     return eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
 
 
@@ -815,6 +817,8 @@ class NoisyStudent(Module):
     def __init__(self, teacher, student):
         self.teacher, self.student = [teacher], student
         self.teacher[0].eval()
+        for param in self.teacher[0].parameters():
+            param.requires_grad = False
 
     def forward(self, tpl):
 
@@ -823,14 +827,22 @@ class NoisyStudent(Module):
             t = self.teacher[0](tpl, softmax=False)
 
         # apply noise
-        x = tpl[0]
-        dtype, dev, mean, std = x.dtype, x.device, x.mean(), x.std()
-        tpl[0] += mean + torch.randn(tpl[0].shape, dtype=dtype, device=dev) * std * 0.1
+        if self.training:
+            x = tpl[0]
+            dtype, dev, std = x.dtype, x.device, x.std()
+            tpl[0] += torch.randn(tpl[0].shape, dtype=dtype, device=dev) * std * 0.1
 
         # forward student
         s = self.student(tpl, softmax=False)
 
         return (t, s)
+
+    def param_groups(self):
+        return [
+            self.student.encoder.param_groups(),
+            self.student.predictor.param_groups(),
+            self.student.joint.param_groups(),
+        ]
 
     def transcribe(self, *args, **kwargs):
         return self.student.transcribe(*args, **kwargs)

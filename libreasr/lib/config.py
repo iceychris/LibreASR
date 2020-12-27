@@ -142,9 +142,7 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
             print("[LM] Failed to load.")
 
     # grab model
-    # m = Transducer.from_config(conf, lang)
     m = get_model(conf, lang)
-    # print(n_params(m))
 
     if inference:
         # load weights

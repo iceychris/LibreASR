@@ -69,7 +69,7 @@ def get_loss_func(
 
         loss_func = partial(rnnt_loss, average_frames=False)
         if noisystudent:
-            loss_func_ns = nn.KLDivLoss(reduction="none")
+            loss_func_ns = nn.KLDivLoss(log_target=True, reduction="none")
 
     else:
         raise Exception(f"no such loss type: {loss_type}")
@@ -79,7 +79,7 @@ def get_loss_func(
             t = time.time()
 
         # extract if noisystudent training
-        if noisystudent:
+        if isinstance(inp, tuple):
             teacher_logits, inp = inp
 
         # unpack
@@ -113,14 +113,14 @@ def get_loss_func(
         if noisystudent:
 
             # params
-            alpha = 0.9
-            T = 4
+            alpha = 0.95
+            T = 1.
 
             # weighted loss
             loss_rnnt = loss * (1. - alpha)
-            loss_ns = (loss_func_ns(F.log_softmax(inp/T, dim=1),
-                                F.softmax(teacher_logits/T, dim=1)) * 300.) * (alpha * T * T)
-            loss_ns = loss_ns.mean((1,2,3))
+            loss_ns = loss_func_ns(F.log_softmax(inp/T, dim=-1),
+                                F.log_softmax(teacher_logits/T, dim=-1)) * (alpha * T * T)
+            loss_ns = loss_ns.mean((1,2,3)) * 20000. * 5
 
             # print(f"RNN-T: {loss_rnnt.mean():.2f}, NS: {loss_ns.mean():.2f}")
 

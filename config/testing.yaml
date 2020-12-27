@@ -268,7 +268,7 @@ training:
 # batch size
 bs: 8 # 6
 # best english run: 10 * 16 = 160
-accumulate_n_batches: 2 # 10
+accumulate_n_batches: 10
 
 # mixed precision
 mp: false
