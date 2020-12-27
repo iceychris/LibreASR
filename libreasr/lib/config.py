@@ -161,5 +161,6 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     else:
         # grab learner
         learn = ASRLearner.from_config(conf, db, m)
+        learn.lang = lang
 
         return conf, lang, builder_train, builder_valid, db, m, learn

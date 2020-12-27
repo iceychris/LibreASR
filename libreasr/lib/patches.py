@@ -25,7 +25,7 @@ def test(
     mp=False,
     save_best=True,
 ):
-    lang = self.model.lang
+    lang = self.lang
     m = self.model.to(device)
 
     # choose train or valid dl

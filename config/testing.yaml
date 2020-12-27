@@ -117,8 +117,8 @@ datasets:
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 0.05 # 1.0
-    valid: 0.05 # 1.0
+    train: 0.1 # 1.0
+    valid: 0.1 # 1.0
     test: 1.0
 
 
@@ -200,8 +200,8 @@ cpu:
 ###
 
 model:
-  # name: Transducer
-  name: ScheduledSamplingTransducer
+  name: Transducer
+  # name: ScheduledSamplingTransducer
   feature_sz: 1280
   embed_sz: 512
   hidden_sz: 1024
@@ -258,6 +258,7 @@ shuffle_builder:
 
 training:
   optimizer: Ranger # AdaHessian
+  noisystudent: true
 
 
 ###

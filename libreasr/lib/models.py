@@ -169,24 +169,24 @@ class Joint(Module):
             nn.Linear(input_sz, joint_sz),
             nn.Tanh(),
             nn.Linear(joint_sz, vocab_sz),
-            nn.LogSoftmax(-1),
         )
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
-    def forward(self, h_pred, h_enc):
+    def forward(self, h_pred, h_enc, softmax=True):
         if self.joint_method == "add":
             x = h_pred + h_enc
         elif self.joint_method == "concat":
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
             raise Exception("No such joint_method")
-        # x = self.joint(x)
         if self.training:
             x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 2, x)
         else:
             x = self.joint(x)
+        if softmax:
+            x = F.log_softmax(x, dim=-1)
         return x
 
 
@@ -303,7 +303,7 @@ class Transducer(Module):
         bos = bos.fill_(self.bos)
         return bos
 
-    def forward(self, tpl):
+    def forward(self, tpl, softmax=True):
         """
         (x, y)
         x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
@@ -343,9 +343,118 @@ class Transducer(Module):
         # print(encoder_out.shape, predictor_out.shape)
 
         # joint & project
-        joint_out = self.joint(predictor_out, encoder_out)
+        joint_out = self.joint(predictor_out, encoder_out, softmax=softmax)
 
         return joint_out
+
+    def transcribe_batch(self, tpl, max_iters=3, lm=False):
+
+        # unpack
+        x, y, xl, yl = tpl
+        if self.mp:
+            x = x.half()
+
+        # encoder
+        x = x.reshape(x.size(0), x.size(1), -1)
+        encoder_out = self.encoder(x, lengths=xl)
+
+        # N: batch size
+        # T: n frames (time)
+        # U: n label tokens
+        # V: vocab size
+        # H: hidden features
+        N, T, H = encoder_out.size()
+        U = y.size(1)
+        V = self.vocab_sz
+        dtype, device = x.dtype, x.device
+
+        # frist
+        pred_input = self.grab_bos(y, yl, bs=N, device=device)
+        pred_output, pred_state = self.predictor(pred_input)
+
+        # prepare vars
+        outs = []
+        predictions = []
+        strs = []
+
+        # check if sth is None
+        def ok(a):
+            if isinstance(a, list): return all([ok(x) for x in a])
+            return a is not None
+
+        # check if two things are the same
+        def eq(a, b):
+            if (a is None or b is None): return False
+            if isinstance(a, list):
+                return all([(x == y).all() for x, y in zip(a, b)])
+            return (a == b).all()
+
+        # memoize joint
+        mp, me = None, None
+        rj = None
+        def memo_joint(p, e):
+            nonlocal mp, me, rj
+            if ok([mp, me]) and ok(rj) and eq(mp, p) and eq(me, e):
+                return rj, False
+            rj = self.joint(p, e)
+            mp, me, = p, e
+            return rj, True
+
+        # memoize predictor
+        mpo, mps = None, None
+        rpo, rps = None, None
+        def memo_predictor(po, ps):
+            nonlocal mpo, mps, rpo, rps
+            if ok([mpo, mps, rpo, rps]) and eq(mpo, po) and eq(mps, ps):
+                return rpo, rps, False
+            rpo, rps = self.predictor(po, state=ps)
+            mpo, mps = po, ps
+            return rpo, rps, True
+
+        # iterate through time
+        for t in range(T):
+
+            # iterate through label
+            for u in range(max_iters):
+
+                # joint
+                joint_out, _ = memo_joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
+
+                # decode one character
+                prob, pred = joint_out.max(-1)
+
+                # set as next input
+                pred_input = pred[:, :, 0]
+
+                # bail if all blank
+                if (pred == self.blank).all():
+                    break
+
+                # advance predictor (output & state)
+                # issue: only advance predictor state
+                #        when a non-blank has been decoded
+                #        (use gather and where)...
+                new_pred_output, new_pred_state, changed = memo_predictor(
+                    pred_input, pred_state
+                )
+
+                if changed:
+                    # select non-blanks for output & state
+                    pred_output = torch.where(pred == self.blank, pred_output, new_pred_output)
+                    # print(t, u, (pred == self.blank).sum())
+                    qpred = pred[None, :, 0]
+                    for i, (ps, nps) in enumerate(zip(pred_state, new_pred_state)):
+                        pred_state[i] = torch.where(qpred == self.blank, ps, nps)
+
+                # store prediction
+                predictions.append(pred[:, 0, 0])
+
+        # denumericalize
+        predictions = torch.stack(predictions, dim=1)
+        for p in predictions:
+            s = self.lang.denumericalize(p.cpu().numpy().tolist())
+            strs.append(s)
+        return strs
 
     def decode(self, *args, **kwargs):
         res, log_p, _ = self.decode_greedy(*args, **kwargs)
@@ -568,7 +677,7 @@ class ScheduledSamplingTransducer(Transducer):
     def from_config(*args, **kwargs):
         return Transducer.from_config(*args, **kwargs, cls=ScheduledSamplingTransducer)
 
-    def forward(self, tpl, cache=True, epsilon=0.9):
+    def forward(self, tpl, transcribe=False, epsilon=0.9):
 
         # unpack
         x, y, xl, yl = tpl
@@ -633,6 +742,13 @@ class ScheduledSamplingTransducer(Transducer):
             mpo, mps = po, ps
             return rpo, rps, True
 
+        # select the next token
+        def select(u, pred):
+            if self.training:
+                return pred
+            ynow = y[:, u, None]
+            mask = pred != self.blank
+
         # iterate through time
         for t in range(T):
 
@@ -641,10 +757,7 @@ class ScheduledSamplingTransducer(Transducer):
             for u in range(U):
 
                 # joint
-                if cache:
-                    joint_out, _ = memo_joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
-                else:
-                    joint_out = self.joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
+                joint_out, _ = memo_joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
 
                 # store for output
                 t_outs.append(joint_out)
@@ -653,21 +766,16 @@ class ScheduledSamplingTransducer(Transducer):
                 prob, pred = joint_out.max(-1)
 
                 # set as next input
-                pred_input = pred[:, :, 0]
+                pred_input = select(u, pred[:, :, 0])
+                set_trace()
 
                 # advance predictor (output & state)
                 # issue: only advance predictor state
                 #        when a non-blank has been decoded
                 #        (use gather and where)...
-                if cache:
-                    new_pred_output, new_pred_state, changed = memo_predictor(
-                        pred_input, pred_state
-                    )
-                else:
-                    new_pred_output, new_pred_state = self.predictor(
-                        pred_input, state=pred_state
-                    )
-                    changed = True
+                new_pred_output, new_pred_state, changed = memo_predictor(
+                    pred_input, pred_state
+                )
 
                 if changed:
                     # select non-blanks for next state
@@ -680,21 +788,52 @@ class ScheduledSamplingTransducer(Transducer):
                 # store prediction
                 predictions.append(pred[:, 0, 0])
 
-            t_outs = torch.cat([t_init, *t_outs], dim=2)
+            t_outs = torch.cat(t_outs, dim=2)
             outs.append(t_outs)
 
-        # result tensor (N, T, U+1, V)
+        # cat T dim
         output = torch.cat(outs, dim=1)
+
+        # cat U dim
+        output = torch.cat([t_init, output], dim=2)
+
+        # result tensor (N, T, U+1, V)
         output = output.contiguous()
 
         # denumericalize
-        predictions = torch.stack(predictions, dim=1)
-        for p in predictions:
-            s = self.lang.denumericalize(p.cpu().numpy().tolist())
-            strs.append(s)
-            # print(s)
+        if transcribe:
+            predictions = torch.stack(predictions, dim=1)
+            for p in predictions:
+                s = self.lang.denumericalize(p.cpu().numpy().tolist())
+                strs.append(s)
+            return output, strs
 
         return output
+
+
+class NoisyStudent(Module):
+    def __init__(self, teacher, student):
+        self.teacher, self.student = [teacher], student
+        self.teacher[0].eval()
+
+    def forward(self, tpl):
+
+        # forward teacher
+        with torch.no_grad():
+            t = self.teacher[0](tpl, softmax=False)
+
+        # apply noise
+        x = tpl[0]
+        dtype, dev, mean, std = x.dtype, x.device, x.mean(), x.std()
+        tpl[0] += mean + torch.randn(tpl[0].shape, dtype=dtype, device=dev) * std * 0.1
+
+        # forward student
+        s = self.student(tpl, softmax=False)
+
+        return (t, s)
+
+    def transcribe(self, *args, **kwargs):
+        return self.student.transcribe(*args, **kwargs)
 
 
 class CTCModel(Module):
