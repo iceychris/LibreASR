@@ -113,7 +113,7 @@ def get_loss_func(
         if noisystudent:
 
             # params
-            alpha = 0.95
+            alpha = 0.001
             T = 1.
 
             # weighted loss

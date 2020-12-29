@@ -45,15 +45,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed", default=42, type=int, help="random seed used while splitting"
     )
+    parser.add_argument(
+        "--out",
+        default="asr-dataset.csv",
+        type=str,
+        help="name of the resulting csv file",
+    )
     args = parser.parse_args()
 
     path = Path(args.path)
     p = path
 
-    df_path = p / "asr-dataset.csv"
-    path_train = p / "asr-dataset-train.csv"
-    path_valid = p / "asr-dataset-valid.csv"
-    path_test = p / "asr-dataset-test.csv"
+    out = args.out
+    df_path = p / args.out
+    path_train = p / args.out.replace(".csv", "-train.csv")
+    path_valid = p / args.out.replace(".csv", "-valid.csv")
+    path_test = p / args.out.replace(".csv", "-test.csv")
 
     # check if exists
     if df_path.exists():

@@ -363,13 +363,14 @@ class MyMaskTime(Transform):
     order = 31
 
     def __init__(
-        self, random=True, num_masks=1, size=20, start=None, val=None, **kwargs
+        self, random=True, num_masks=1, size=20, start=None, val=None, adaptive=True, **kwargs
     ):
         self.random = random
         self.num_masks = num_masks
         self.size = size
         self.start = start
         self.val = val
+        self.adaptive = adaptive
 
     def encodes(self, spectro) -> None:
         """Google SpecAugment time masking from https://arxiv.org/abs/1904.08779."""
@@ -384,16 +385,23 @@ class MyMaskTime(Transform):
         channel_mean = sg.contiguous().view(sg.size(0), -1).mean(-1)[:, None, None]
         mask_val = channel_mean if val is None else val
         c, y, x = sg.shape
-        for _ in range(num_masks):
-            mask = torch.ones(size, x, device=spectro.device) * mask_val
-            if start is None:
-                start = random.randint(0, y - size)
-            if not 0 <= start <= y - size:
-                raise ValueError(
-                    f"Start value '{start}' out of range for AudioSpectrogram of shape {sg.shape}"
-                )
-            sg[:, start : start + size, :] = mask
-            start = None
+        def mk_masks(_min, _max):
+            for _ in range(num_masks):
+                mask = torch.ones(size, x, device=spectro.device) * mask_val
+                start = random.randint(_min, _max - size)
+                if not 0 <= start <= y - size:
+                    raise ValueError(
+                        f"Start value '{start}' out of range for AudioSpectrogram of shape {sg.shape}"
+                    )
+                sg[:, start : start + size, :] = mask
+        if self.adaptive:
+            sz = 100
+            for a in range(0, y, sz):
+                _min, _max = a, min(a+sz, y)
+                if _max - _min != sz: continue
+                mk_masks(_min, _max)
+        else:
+            mk_masks(0, y)
         return sg
 
 
@@ -401,13 +409,14 @@ class MyMaskFreq(Transform):
     order = 32
 
     def __init__(
-        self, random=True, num_masks=1, size=20, start=None, val=None, **kwargs
+        self, random=True, num_masks=1, size=20, start=None, val=None, adaptive=False, **kwargs
     ):
         self.random = random
         self.num_masks = num_masks
         self.size = size
         self.start = start
         self.val = val
+        self.adaptive = adaptive
         self.kwargs = kwargs
 
     def encodes(self, spectro) -> None:
@@ -417,7 +426,7 @@ class MyMaskFreq(Transform):
         sg = spectro.clone()
         sg = torch.einsum("...ij->...ji", sg)
         sg = MyMaskTime(
-            self.random, self.num_masks, self.size, self.start, self.val, **self.kwargs
+            self.random, self.num_masks, self.size, self.start, self.val, self.adaptive, **self.kwargs
         )(sg)
         return torch.einsum("...ij->...ji", sg)
 

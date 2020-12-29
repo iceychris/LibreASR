@@ -47,8 +47,8 @@ transforms:
       wrap: true
       partial: true
       args:
-        num_masks: 4
-        size: 2
+        num_masks: 2
+        size: 4
     - name: MyMaskFreq
       wrap: true
       partial: true
@@ -117,8 +117,8 @@ datasets:
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 0.1 # 1.0
-    valid: 0.1 # 1.0
+    train: 1.0 # 1.0
+    valid: 1.0 # 1.0
     test: 1.0
 
 
@@ -164,12 +164,15 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 6.0 # 9.0
+almaxs: 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 60 # 100
+y_max: 80 # 60 # 100
 y_max_words: 100
+
+# which dataset to use
+suffix: cat-4
 
 
 ###
@@ -258,7 +261,10 @@ shuffle_builder:
 
 training:
   optimizer: Ranger # AdaHessian
-  noisystudent: true
+
+  # use noisy student training
+  #  (a variant of knowledge distillation)
+  noisystudent: false
 
 
 ###
