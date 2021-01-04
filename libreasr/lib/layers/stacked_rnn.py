@@ -16,60 +16,8 @@ RNN_TYPES = ["LSTM", "GRU", "NBRC"]
 USE_PYTORCH = True
 
 
-def get_rnn_impl(device, rnn_type, layer_norm=False):
-    assert device in DEVICES
-    assert rnn_type in RNN_TYPES
-    if device == "GPU":
-        if rnn_type == "LSTM":
-            if layer_norm:
-                # from haste_pytorch import LayerNormLSTM as RNN
-                from torch.nn import LSTM as RNN
-            else:
-                # from haste_pytorch import LSTM as RNN
-                from torch.nn import LSTM as RNN
-        if rnn_type == "GRU":
-            # from haste_pytorch import GRU as RNN
-            from torch.nn import GRU as RNN
-        if rnn_type == "NBRC":
-            raise Exception("NBRC GPU not available")
-    if device == "CPU":
-        if rnn_type == "LSTM":
-            if layer_norm:
-                # from .haste import LayerNormLSTM as RNN
-                from torch.nn import LSTM as RNN
-            else:
-                # from .haste import LSTM as RNN
-                from torch.nn import LSTM as RNN
-        if rnn_type == "GRU":
-            # from .haste import GRU as RNN
-            from torch.nn import GRU as RNN
-        if rnn_type == "NBRC":
-            from .haste import NBRC as RNN
-    return RNN
-
-
-def get_weight_attrs(rnn_type, layer_norm):
-    attrs = [
-        "kernel",
-        "recurrent_kernel",
-        "bias",
-    ]
-    if rnn_type == "GRU" or rnn_type == "NBRC":
-        attrs += [
-            "recurrent_bias",
-        ]
-    if layer_norm:
-        attrs += [
-            "gamma",
-            "gamma_h",
-            "beta_h",
-        ]
-    return attrs
-
-
-def copy_weights(_from, _to, attrs):
-    for attr in attrs:
-        setattr(_to, attr, getattr(_from, attr))
+def get_rnn_impl(rnn_type):
+    return getattr(nn, rnn_type)
 
 
 def get_initial_state(rnn_type, hidden_size, init=torch.zeros):
@@ -82,7 +30,7 @@ def get_initial_state(rnn_type, hidden_size, init=torch.zeros):
     return h, tmp
 
 
-class CustomRNN(nn.Module):
+class StackedRNN(nn.Module):
     def __init__(
         self,
         input_size,
@@ -96,6 +44,7 @@ class CustomRNN(nn.Module):
         rezero=False,
         layer_norm=False,
         utsp=0.9,
+        norm_cls=nn.BatchNorm1d,
     ):
         super().__init__()
         self.batch_first = batch_first
@@ -121,8 +70,7 @@ class CustomRNN(nn.Module):
         # norm (BN or LN)
         self.bns = nn.ModuleList()
         for i, o in zip(self._is, self._os):
-            norm = nn.BatchNorm1d(o)
-            # norm = nn.LayerNorm(o)
+            norm = norm_cls(o)
             self.bns.append(norm)
 
         # rezero
@@ -131,11 +79,12 @@ class CustomRNN(nn.Module):
         # percentage of carrying over last state
         self.utsp = utsp
 
-    def convert_to_cpu(self):
-        return self
-
-    def convert_to_gpu(self):
-        return self
+        # inititalize rnn stack
+        rnn_cls = get_rnn_impl(self.rnn_type)
+        self.rnns = nn.ModuleList()
+        for i, o in zip(self._is, self._os):
+            r = rnn_cls(i, o, batch_first=self.batch_first)
+            self.rnns.append(r)
 
     def forward_one_rnn(
         self, x, i, state=None, should_use_tmp_state=False, lengths=None
@@ -230,51 +179,3 @@ class CustomRNN(nn.Module):
             else:
                 self.cache[bs] = [h.detach() for h in new_states]
         return x, new_states
-
-
-class CustomGPURNN(CustomRNN):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._args = args
-        self._kwargs = kwargs
-        RNN = get_rnn_impl("GPU", self.rnn_type, kwargs["layer_norm"])
-        self.rnns = nn.ModuleList()
-        for i, o in zip(self._is, self._os):
-            # r = RNN(i, o, batch_first=self.batch_first, zoneout=ZONEOUT)
-            r = RNN(i, o, batch_first=self.batch_first)
-            self.rnns.append(r)
-
-    def convert_to_cpu(self):
-        if USE_PYTORCH:
-            return self.to("cpu")
-        dev = next(self.parameters()).device
-        inst = CustomCPURNN(*self._args, **self._kwargs)
-        attrs = get_weight_attrs(self.rnn_type, self._kwargs["layer_norm"])
-        for i, rnn in enumerate(self.rnns):
-            grabbed_rnn = inst.rnns[i]
-            copy_weights(rnn, grabbed_rnn, attrs)
-        return inst.to("cpu")
-
-
-class CustomCPURNN(CustomRNN):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._args = args
-        self._kwargs = kwargs
-        RNN = get_rnn_impl("CPU", self.rnn_type, kwargs["layer_norm"])
-        self.rnns = nn.ModuleList()
-        for i, o in zip(self._is, self._os):
-            # r = RNN(i, o, batch_first=self.batch_first, zoneout=ZONEOUT)
-            r = RNN(i, o, batch_first=self.batch_first)
-            self.rnns.append(r)
-
-    def convert_to_gpu(self):
-        dev = next(self.parameters()).device
-        if USE_PYTORCH or self.rnn_type == "NBRC":
-            return self.to(dev)
-        inst = CustomGPURNN(*self._args, **self._kwargs)
-        attrs = get_weight_attrs(self.rnn_type, self._kwargs["layer_norm"])
-        for i, rnn in enumerate(self.rnns):
-            grabbed_rnn = inst.rnns[i]
-            copy_weights(rnn, grabbed_rnn, attrs)
-        return inst.to(dev)

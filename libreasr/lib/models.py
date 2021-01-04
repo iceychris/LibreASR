@@ -17,7 +17,7 @@ from fastai2.learner import CancelBatchException
 from IPython.core.debugger import set_trace
 
 from libreasr.lib.utils import *
-from libreasr.lib.layers import *
+from libreasr.lib.layers import StackedRNN
 from libreasr.lib.lm import LMFuser
 
 
@@ -78,7 +78,7 @@ class Encoder(Module):
     ):
         self.num_layers = num_layers
         self.input_norm = nn.LayerNorm(feature_sz)
-        self.rnn_stack = CustomCPURNN(
+        self.rnn_stack = StackedRNN(
             feature_sz,
             hidden_sz,
             num_layers,
@@ -130,7 +130,7 @@ class Predictor(Module):
             self.ffn = nn.Linear(embed_sz, hidden_sz)
         else:
             self.ffn = nn.Sequential()
-        self.rnn_stack = CustomCPURNN(
+        self.rnn_stack = StackedRNN(
             hidden_sz,
             hidden_sz,
             num_layers,
@@ -272,16 +272,6 @@ class Transducer(Module):
             self.predictor.param_groups(),
             self.joint.param_groups(),
         ]
-
-    def convert_to_cpu(self):
-        self.encoder.rnn_stack = self.encoder.rnn_stack.convert_to_cpu()
-        self.predictor.rnn_stack = self.predictor.rnn_stack.convert_to_cpu()
-        return self
-
-    def convert_to_gpu(self):
-        self.encoder.rnn_stack = self.encoder.rnn_stack.convert_to_gpu()
-        self.predictor.rnn_stack = self.predictor.rnn_stack.convert_to_gpu()
-        return self
 
     def post_quantize(self):
         self.__class__ = QuantizedTransducer
@@ -752,9 +742,6 @@ class CTCModel(Module):
         layer = nn.TransformerEncoderLayer(128, 8)
         self.encoder = nn.TransformerEncoder(layer, 8)
         self.linear = nn.Linear(128, 2048)
-
-    def convert_to_gpu(self):
-        pass
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
