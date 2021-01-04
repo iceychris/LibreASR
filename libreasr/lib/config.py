@@ -141,7 +141,7 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         except:
             print("[LM] Failed to load.")
 
-    # grab model
+    # grab model instance
     m = get_model(conf, lang)
 
     if inference:
