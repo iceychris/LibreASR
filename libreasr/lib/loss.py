@@ -114,13 +114,15 @@ def get_loss_func(
 
             # params
             alpha = 0.001
-            T = 1.
+            T = 1.0
 
             # weighted loss
-            loss_rnnt = loss * (1. - alpha)
-            loss_ns = loss_func_ns(F.log_softmax(inp/T, dim=-1),
-                                F.log_softmax(teacher_logits/T, dim=-1)) * (alpha * T * T)
-            loss_ns = loss_ns.mean((1,2,3)) * 20000. * 5
+            loss_rnnt = loss * (1.0 - alpha)
+            loss_ns = loss_func_ns(
+                F.log_softmax(inp / T, dim=-1),
+                F.log_softmax(teacher_logits / T, dim=-1),
+            ) * (alpha * T * T)
+            loss_ns = loss_ns.mean((1, 2, 3)) * 20000.0 * 5
 
             # print(f"RNN-T: {loss_rnnt.mean():.2f}, NS: {loss_ns.mean():.2f}")
 

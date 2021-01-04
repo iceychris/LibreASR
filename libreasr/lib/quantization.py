@@ -5,9 +5,15 @@ from libreasr.lib.models import Transducer
 
 
 class QuantizedTransducer(Transducer):
-    def eval(self): try_eval(self); return self
-    def train(self): return self
-    def to(self, _): return self
+    def eval(self):
+        try_eval(self)
+        return self
+
+    def train(self):
+        return self
+
+    def to(self, _):
+        return self
 
 
 def try_eval(m):
@@ -32,7 +38,7 @@ def save_quantized(m):
     torch.save(m.joint, "t-j.pth")
     if lang is not None:
         m.lang = lang
-    
+
 
 def load_quantized(m, conf, lang):
     m = m.cpu()
@@ -45,11 +51,11 @@ def load_quantized(m, conf, lang):
     m.encoder = torch.load(pe, **kwargs)
     m.predictor = torch.load(pp, **kwargs)
     m.joint = torch.load(pj, **kwargs)
-    
+
     # set to eval mode
     try_eval(m)
-    
+
     # patch class (to fix eval, train and to)
     m.__class__ = QuantizedTransducer
-    
+
     return m

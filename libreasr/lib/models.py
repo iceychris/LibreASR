@@ -166,9 +166,7 @@ class Joint(Module):
         else:
             raise Exception("No such joint_method")
         self.joint = nn.Sequential(
-            nn.Linear(input_sz, joint_sz),
-            nn.Tanh(),
-            nn.Linear(joint_sz, vocab_sz),
+            nn.Linear(input_sz, joint_sz), nn.Tanh(), nn.Linear(joint_sz, vocab_sz),
         )
 
     def param_groups(self):
@@ -243,7 +241,8 @@ class Transducer(Module):
 
     @staticmethod
     def from_config(conf, lang, lm=None, cls=None):
-        if cls is None: cls = Transducer
+        if cls is None:
+            cls = Transducer
         m = cls(
             conf["model"]["feature_sz"],
             conf["model"]["embed_sz"],
@@ -384,12 +383,14 @@ class Transducer(Module):
 
         # check if sth is None
         def ok(a):
-            if isinstance(a, list): return all([ok(x) for x in a])
+            if isinstance(a, list):
+                return all([ok(x) for x in a])
             return a is not None
 
         # check if two things are the same
         def eq(a, b):
-            if (a is None or b is None): return False
+            if a is None or b is None:
+                return False
             if isinstance(a, list):
                 return all([(x == y).all() for x, y in zip(a, b)])
             return (a == b).all()
@@ -397,6 +398,7 @@ class Transducer(Module):
         # memoize joint
         mp, me = None, None
         rj = None
+
         def memo_joint(p, e):
             nonlocal mp, me, rj
             if ok([mp, me]) and ok(rj) and eq(mp, p) and eq(me, e):
@@ -408,6 +410,7 @@ class Transducer(Module):
         # memoize predictor
         mpo, mps = None, None
         rpo, rps = None, None
+
         def memo_predictor(po, ps):
             nonlocal mpo, mps, rpo, rps
             if ok([mpo, mps, rpo, rps]) and eq(mpo, po) and eq(mps, ps):
@@ -428,7 +431,9 @@ class Transducer(Module):
             for u in range(max_iters):
 
                 # joint
-                joint_out, _ = memo_joint(pred_output.unsqueeze(1), encoder_out[:, t, None, None])
+                joint_out, _ = memo_joint(
+                    pred_output.unsqueeze(1), encoder_out[:, t, None, None]
+                )
 
                 # decode one character
                 prob, pred = joint_out.max(-1)
@@ -450,12 +455,16 @@ class Transducer(Module):
 
                 if changed:
                     # select non-blanks for output & state
-                    pred_output = torch.where(pred == self.blank, pred_output, new_pred_output)
+                    pred_output = torch.where(
+                        pred == self.blank, pred_output, new_pred_output
+                    )
                     qpred = pred[None, :, 0]
                     listify(pred_state, cls=list)
                     for i, (ps, nps) in enumerate(zip(pred_state, new_pred_state)):
                         for j, (psi, npsi) in enumerate(zip(ps, nps)):
-                            pred_state[i][j] = torch.where(qpred == self.blank, psi, npsi)
+                            pred_state[i][j] = torch.where(
+                                qpred == self.blank, psi, npsi
+                            )
                     listify(pred_state, cls=tuple)
 
                 # store prediction
@@ -627,7 +636,6 @@ class Transducer(Module):
                     chunk, state=encoder_state, return_state=True
                 )
             h_t_enc = encoder_out[0]
-
 
             # loop over encoder states (t)
             y_seq = []
