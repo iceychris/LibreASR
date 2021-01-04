@@ -13,8 +13,8 @@ import torchaudio
 # fastai2_audio
 # add flac to supported audio types
 import mimetypes
-
 mimetypes.types_map[".flac"] = "audio/flac"
+
 from fastai2_audio.core.all import get_audio_files
 
 from libreasr.lib.utils import sanitize_str
@@ -106,17 +106,12 @@ if __name__ == "__main__":
         help="name of the resulting csv file",
     )
     parser.add_argument(
-        "--soundfile",
-        type=str2bool,
-        const=True,
-        default=False,
-        nargs="?",
-        help="use torchaudio soundfile implementation",
+        "--filter",
+        default="",
+        type=str,
+        help="filter the files by this csv",
     )
     args = parser.parse_args()
-
-    if args.soundfile:
-        torchaudio.set_audio_backend("soundfile")
 
     path = Path(args.path)
     dataset = args.dataset
@@ -147,8 +142,15 @@ if __name__ == "__main__":
 
     # filter out files that are already in the df
     files = pd.Series([str(x) for x in files])
-    res = files.isin(df.file)
-    files = [Path(x) for x in files[~res].tolist()]
+    res = ~files.isin(df.file)
+
+    # filter out files that are in --filter if specified
+    if args.filter != "":
+        df_filter = pd.read_csv(p / args.filter)
+        res2 = files.isin(pd.unique(df_filter.file))
+        res = res & res2
+
+    files = [Path(x) for x in files[res].tolist()]
     print("> filtered files:", len(files))
 
     # get_labels for each dataset format

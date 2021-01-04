@@ -69,13 +69,21 @@ if __name__ == "__main__":
     else:
         raise Exception("asr-dataset.csv does not exist")
 
+    # get unqiue files
+    all_uniq = pd.unique(df.file)
+
     # first, train and non_train
     train, non_train = train_test_split(
-        df, test_size=args.split * 2.0, random_state=args.seed
+        all_uniq, test_size=args.split * 2.0, random_state=args.seed
     )
 
     # then, valid and test
     valid, test = train_test_split(non_train, test_size=0.5, random_state=args.seed)
+
+    # convert to dfs
+    train = df[df.file.isin(train)]
+    valid = df[df.file.isin(valid)]
+    test = df[df.file.isin(test)]
 
     # save
     check_save(train, path_train)
