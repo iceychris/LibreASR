@@ -18,6 +18,30 @@ def maybe_post_quantize(model, debug=True):
     return model
 
 
+def quantize_rnnt(m, backend='qnnpack'):
+
+    # prepare
+    prev_backend = torch.backends.quantized.engine
+    torch.backends.quantized.engine = backend
+    m = m.cpu()
+    lang, lm = m.lang, m.lm
+    del m.lang
+    del m.lm
+
+    # quantize
+    m = torch.quantization.quantize_dynamic(
+        m,  # the original model
+        {Encoder, Predictor, Joint}, # a set of layers to dynamically quantize
+        dtype=torch.qint8)
+
+    # post restore
+    torch.backends.quantized.engine = prev_backend
+    m.lang = lang
+    m.lm = lm
+
+    return m
+
+
 def save_quantized(m):
     m = m.eval()
     lang = None
