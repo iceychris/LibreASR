@@ -10,8 +10,7 @@ import torch
 
 from fastai2.learner import load_model
 
-from libreasr.lib.utils import maybe_quantize
-from libreasr.lib.quantization import load_quantized
+from libreasr.lib.quantization import load_quantized, maybe_post_quantize
 
 
 _PATH_ARCHIVE = Path("libreasr-model.tar.gz")
@@ -59,6 +58,7 @@ def load_asr_model(
     model,
     lang_name,
     lang,
+    paths,
     quantized,
     device="cpu",
     lm=None,
@@ -74,7 +74,7 @@ def load_asr_model(
 
     # model
     if quantized:
-        model = load_quantized(model, conf, lang)
+        model = load_quantized(model, paths, lang)
     else:
         try:
             load_model(
@@ -91,6 +91,6 @@ def load_asr_model(
         # quantize model
         #  we need to this before loading our model
         #  as the saved model is quantized ???
-        model = maybe_quantize(model)
+        model = maybe_post_quantize(model)
 
     return model

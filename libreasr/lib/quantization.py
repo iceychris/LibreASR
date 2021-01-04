@@ -1,30 +1,21 @@
 import torch
 import torch.nn as nn
 
-from libreasr.lib.models import Transducer
 
-
-class QuantizedTransducer(Transducer):
-    def eval(self):
-        try_eval(self)
-        return self
-
-    def train(self):
-        return self
-
-    def to(self, _):
-        return self
-
-
-def try_eval(m):
-    for c in m.children():
-        if isinstance(c, torch.nn.quantized.modules.linear.LinearPackedParams):
-            continue
-        try:
-            c.eval()
-        except:
-            pass
-        try_eval(c)
+def maybe_post_quantize(model, debug=True):
+    name = model.__class__.__name__
+    try:
+        model = torch.quantization.quantize_dynamic(
+            model, {torch.nn.LSTM, torch.nn.Linear}, dtype=torch.qint8
+        )
+        if debug:
+            print(f"[quantization] post-quantizing {name} done.")
+    except:
+        if debug:
+            print(
+                f"[quantization] post-quantizing {name} failed. Might lead to degraded model performance."
+            )
+    return model
 
 
 def save_quantized(m):
@@ -40,22 +31,25 @@ def save_quantized(m):
         m.lang = lang
 
 
-def load_quantized(m, conf, lang):
+def load_quantized(m, paths, lang):
     m = m.cpu()
     kwargs = {"map_location": "cpu"}
 
     # extract paths
-    pe, pp, pj = conf["model"]["path"]
+    pe, pp, pj = paths
 
     # load
     m.encoder = torch.load(pe, **kwargs)
     m.predictor = torch.load(pp, **kwargs)
     m.joint = torch.load(pj, **kwargs)
 
-    # set to eval mode
-    try_eval(m)
-
     # patch class (to fix eval, train and to)
-    m.__class__ = QuantizedTransducer
+    m.post_quantize()
+
+    # set to eval mode
+    m = m.eval()
+
+    # debug
+    print("[quantization] load_quantized(...) done")
 
     return m

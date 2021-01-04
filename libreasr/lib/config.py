@@ -148,7 +148,9 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         # load weights
         from libreasr.lib.model_utils import load_asr_model
 
-        load_asr_model(m, lang_name, lang, conf["cuda"]["device"], lm=lm)
+        load_asr_model(
+            m, lang_name, lang, conf["model"]["path"], conf["cuda"]["device"], lm=lm
+        )
         m.lm = lm
         m.lang = lang
 

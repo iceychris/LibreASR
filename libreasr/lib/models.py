@@ -283,6 +283,9 @@ class Transducer(Module):
         self.predictor.rnn_stack = self.predictor.rnn_stack.convert_to_gpu()
         return self
 
+    def post_quantize(self):
+        self.__class__ = QuantizedTransducer
+
     def grab_bos(self, y, yl, bs, device):
         if self.training and self.use_tmp_bos:
             r = random.random()
@@ -719,6 +722,29 @@ class NoisyStudent(Module):
 
     def transcribe(self, *args, **kwargs):
         return self.student.transcribe(*args, **kwargs)
+
+
+def try_eval(m):
+    for c in m.children():
+        if isinstance(c, torch.nn.quantized.modules.linear.LinearPackedParams):
+            continue
+        try:
+            c.eval()
+        except:
+            pass
+        try_eval(c)
+
+
+class QuantizedTransducer(Transducer):
+    def eval(self):
+        try_eval(self)
+        return self
+
+    def train(self):
+        return self
+
+    def to(self, _):
+        return self
 
 
 class CTCModel(Module):
