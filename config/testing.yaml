@@ -75,6 +75,9 @@ transforms:
     - name: MyNumericalize
     - name: AddLen
 
+# set the used language
+lang: fr
+
 # datasets
 dataset_paths: 
     tf-speech: "/data/stt/data/tf-speech-recognition/train"
@@ -93,26 +96,38 @@ dataset_paths:
 
 # selected datasets
 datasets:
-
-    # | en
-    # - common-voice-en
-    # - yt-en
-    # - librispeech-0
-    # - librispeech-1
-    # - librispeech-2
-    # - tatoeba-en
-
-    # | de
-    - common-voice-de
-    # - yt-de
-
-    # | fr
-    # - common-voice-fr
-    # - yt-fr
-
-    # | es
-    # - common-voice-es
-    # - yt-es
+  en:
+    train:
+      - common-voice-en
+      - yt-en
+      - librispeech-0
+      - librispeech-1
+      - librispeech-2
+      - tatoeba-en
+    valid:
+      - common-voice-en
+      # - yt-en
+  de:
+    train:
+      - common-voice-de
+      - yt-de
+    valid:
+      - common-voice-de
+      # - yt-de
+  fr:
+    train:
+      - common-voice-fr
+      - yt-fr
+    valid:
+      - common-voice-fr
+      # - yt-fr
+  es:
+    train:
+      - common-voice-es
+      - yt-es
+    valid:
+      - common-voice-es
+      # - yt-es
 
 # percentage of each individual dataframe used
 #  (stage: builder)
@@ -164,15 +179,15 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 8.0 # 6.0 # 9.0
+almaxs: 8.0 # 10.0 # 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 80 # 60 # 100
+y_max: 80 # 130 # 80 # 60 # 100
 y_max_words: 100
 
 # which dataset to use
-suffix: "" # cat-4
+suffix: "" # "cat-mix" # cat-4
 
 
 ###
@@ -204,7 +219,6 @@ cpu:
 
 model:
   name: Transducer
-  # name: ScheduledSamplingTransducer
   feature_sz: 1280
   embed_sz: 512
   hidden_sz: 1024
@@ -272,12 +286,21 @@ training:
 # other
 ###
 
-# batch size
-bs: 8 # 6
-# best english run: 10 * 16 = 160
-accumulate_n_batches: 10
+# batch management
+batching:
 
-# mixed precision
+  # batch size for training dataset
+  #  (managed by DynamicBucketingDL)
+  batch_size_train: "auto"
+
+  # batch size for validation dataset
+  batch_size_valid: 8 # 32
+
+  # gradient accumulation
+  #  (number of batches)
+  accumulate: 10
+
+# mixed precision training
 mp: false
 mp_clip: 2.
 

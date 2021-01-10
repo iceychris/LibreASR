@@ -2,6 +2,7 @@ from functools import partial
 from pathlib import Path
 import multiprocessing
 import glob
+import random
 
 import tqdm
 import pandas as pd
@@ -80,9 +81,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--block-size",
-        default=2,
-        type=int,
-        help="in case of vtt format, how many sentences to collect together (min: 2)",
+        default="2",
+        type=str,
+        help="in case of vtt format, how many sentences to collect together (min: 2). For mixing, use e.g. [4,6,8]",
     )
     parser.add_argument(
         "--save-every-pcent",
@@ -95,6 +96,12 @@ if __name__ == "__main__":
         default=5,
         type=int,
         help="print info every N% of all files",
+    )
+    parser.add_argument(
+        "--max-xlen",
+        default=20000,
+        type=int,
+        help="maximum audio length in milliseconds",
     )
     parser.add_argument(
         "--lang", default="en", type=str, help="language",
@@ -117,6 +124,12 @@ if __name__ == "__main__":
     dataset = args.dataset
     p = path
     save_path = path / args.out
+
+    # parse block-size
+    try:
+        args.block_size = int(args.block_size)
+    except:
+        args.block_size = eval(args.block_size)
 
     # create df
     # see if exists
@@ -233,8 +246,13 @@ if __name__ == "__main__":
 
         def get_labels(file, duration):
 
+            # get block size
+            if isinstance(args.block_size, list):
+                block_size = random.choice(args.block_size)
+            else:
+                block_size = args.block_size
+
             # parse vtt file
-            block_size = args.block_size
             label_file = f"{file.parent}/{file.stem}.{args.lang}.vtt"
             # print(label_file)
             try:
@@ -294,7 +312,7 @@ if __name__ == "__main__":
                     continue
 
                 # keep automatic captions (drop closed captions)
-                if int(end - start) % 1000 == 0:
+                if int(end - start) % 1000 == 0 or int(end - start) > args.max_xlen:
                     # print("drop", file.stem, "closed captions")
                     continue
 

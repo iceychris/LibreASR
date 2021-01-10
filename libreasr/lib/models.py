@@ -256,7 +256,6 @@ class Transducer(Module):
             p_j=conf["model"]["joint"]["dropout"],
             joint_method=conf["model"]["joint"]["method"],
             perf=False,
-            bs=conf["bs"],
             raw_audio=False,
             use_tmp_bos=conf["model"]["use_tmp_bos"],
             use_tmp_bos_pcent=conf["model"]["use_tmp_bos_pcent"],

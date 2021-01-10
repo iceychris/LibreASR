@@ -311,6 +311,7 @@ def grab_asr_databunch(
     tfms_args,
     sorted_dl_args,
     pad_collate_float_args={},
+    bs_valid=8,
     after_batch=[],
     splitter=partial(RandomSplitter, seed=42),
     norm_file=None,
@@ -342,7 +343,7 @@ def grab_asr_databunch(
     sorted_dl_args_train["tpls"] = tpls_train
 
     sorted_dl_args_valid = sorted_dl_args.copy()
-    sorted_dl_args_valid["bs"] = BS_VALID
+    sorted_dl_args_valid["bs"] = bs_valid
     sorted_dl_args_valid["shuffle"] = True
     sorted_dl_args_valid["tpls"] = tpls_valid
 
@@ -487,7 +488,7 @@ class ASRDatabunch:
             use_extra_features=False,
         )
         sorted_dl_args = OrderedDict(
-            bs=None,  # conf["bs"],
+            bs=None,
             num_workers=conf["num_workers"],
             shuffle=conf["shuffle"],
             reverse=conf["ascending"],
@@ -505,6 +506,7 @@ class ASRDatabunch:
             tfms_args,
             sorted_dl_args,
             pad_collate_float_args,
+            bs_valid=conf["batching"]["batch_size_valid"],
             norm_file=conf["norm_file"],
             after_batch=after_batch,
         )
