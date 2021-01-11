@@ -126,7 +126,7 @@ class App extends React.Component {
     return (
       <div className="container App">
 
-        <h1>ASR Demo</h1>
+        <h1>LibreASR</h1>
 
         <div className="container">
           <div className="info">
@@ -213,13 +213,6 @@ class App extends React.Component {
             </button>
           </div>
 
-        </div>
-
-        <h2>Transcribe File</h2>
-        <div className="container">
-          <div className="row">
-            <div className="transcript well" id="transcript-file"></div>
-          </div>
         </div>
 
       </div>

@@ -136,8 +136,14 @@ class Resample(Transform):
 
     def encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
-        smpl = torchaudio.transforms.Resample(orig_freq=i.sr, new_freq=self.sr)
-        return AudioTensor(smpl(i), self.sr)
+        if i.sr % self.sr == 0 or i.sr < 16000:
+            smpl = torchaudio.transforms.Resample(orig_freq=i.sr, new_freq=self.sr)
+            res = smpl(i)
+        else:
+            res = torch.from_numpy(
+                resample_poly(i.numpy()[0], self.sr, i.sr)
+            ).float()[None]
+        return AudioTensor(res, self.sr)
 
 
 class ResamplePoly(Transform):

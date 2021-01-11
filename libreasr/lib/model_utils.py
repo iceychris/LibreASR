@@ -74,7 +74,7 @@ def load_asr_model(
 
     # model
     if quantized:
-        model = load_quantized(model, paths, lang)
+        model = load_quantized(model, lang, paths)
     else:
         try:
             load_model(
