@@ -19,7 +19,7 @@ from IPython.core.debugger import set_trace
 def test(
     self: Learner,
     pcent=0.5,
-    min_samples=320,
+    min_samples=800,
     device="cuda:0",
     train=False,
     mp=False,

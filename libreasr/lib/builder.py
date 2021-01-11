@@ -41,7 +41,8 @@ class ASRDatabunchBuilder:
 
     @staticmethod
     def from_config(conf, mode):
-        paths = [conf["dataset_paths"][x] for x in conf["datasets"]]
+        lang = conf["lang"]
+        paths = [conf["dataset_paths"][x] for x in conf["datasets"][lang][mode]]
         pcent = conf["pcent"][mode]
         suffix = conf.get("suffix", "")
         builder = (

@@ -224,7 +224,7 @@ class ASRLearner(Learner):
 
         else:
             raise Exception("No such optimizer")
-        acnb = conf["accumulate_n_batches"]
+        acnb = conf["batching"]["accumulate"]
         if acnb > 1 and not optim == "adahessian":
             cbs.append(GradAccumCallback(num_batches=acnb))
         extra_cbs = []
