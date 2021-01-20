@@ -4,7 +4,7 @@ import random
 from queue import PriorityQueue
 
 import torch
-from torch import nn
+from torch import nn, einsum
 import torch.nn.functional as F
 
 import numpy as np
@@ -172,14 +172,18 @@ class Joint(Module):
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
-    def forward(self, h_pred, h_enc, softmax=True):
+    def forward(self, h_pred, h_enc, softmax=True, normalize_grad=False):
+        # https://arxiv.org/pdf/2011.01576.pdf
+        if normalize_grad:
+            h_pred.register_hook(lambda grad: grad / h_enc.size(1))
+            h_enc.register_hook(lambda grad: grad / h_pred.size(1))
         if self.joint_method == "add":
             x = h_pred + h_enc
         elif self.joint_method == "concat":
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
             raise Exception("No such joint_method")
-        # x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 2, x)
+        # x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 3, x)
         x = self.joint(x)
         if softmax:
             x = F.log_softmax(x, dim=-1)
@@ -237,6 +241,7 @@ class Transducer(Module):
         self.use_tmp_bos = use_tmp_bos
         self.use_tmp_bos_pcent = use_tmp_bos_pcent
         self.vocab_sz = vocab_sz
+        self.hidden_sz = hidden_sz
         self.lm = None
 
     @staticmethod
@@ -734,6 +739,93 @@ class QuantizedTransducer(Transducer):
 
     def to(self, _):
         return self
+
+
+def masked_mean(t, mask, dim = 1):
+    t = t.masked_fill(~mask[:, :, None], 0.)
+    return t.sum(dim = 1) / mask.sum(dim = 1)[..., None]
+
+
+class ContrastiveTransducer(Transducer):
+    def __init__(self, *args, hidden_sz=1024, **kwargs):
+        a, b = hidden_sz, hidden_sz
+        self.e_latent = nn.Linear(a, b, bias=False)
+        self.p_latent = nn.Linear(a, b, bias=False)
+        self.temperature = nn.Parameter(torch.tensor(1.))
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def from_config(conf, lang, lm=None, cls=None):
+        cls = ContrastiveTransducer
+        return Transducer.from_config(conf, lang, lm, cls)
+
+    def param_groups(self):
+        return [
+            [
+                self.temperature,
+                self.e_latent.weight,
+                self.p_latent.weight,
+            ],
+            self.encoder.param_groups(),
+            self.predictor.param_groups(),
+            self.joint.param_groups(),
+        ]
+
+    def forward(self, tpl, softmax=True):
+        """
+        (x, y)
+        x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
+        y: N tuples (y_padded, y_lens)
+        """
+
+        # unpack
+        x, y, xl, yl = tpl
+        if self.mp:
+            x = x.half()
+
+        # encoder
+        x = x.reshape(x.size(0), x.size(1), -1)
+        encoder_out = self.encoder(x, lengths=xl)
+
+        # N: batch size
+        # T: n frames (time)
+        # H: hidden features
+        N, T, H = encoder_out.size()
+
+        # predictor
+        # concat first bos (yconcat is y shifted right by 1)
+        bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
+        yconcat = torch.cat((bos, y), dim=1)
+        # yl here because we want to omit the last label
+        # in the resulting state (we had (yl + 1))
+        predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
+        U = predictor_out.size(1)
+
+        ###
+        # following lucidrains CLIP model:
+        #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
+        ###
+
+        # create masks
+        emask = torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+        pmask = torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
+
+        # reduce
+        e = masked_mean(encoder_out, emask, dim=1)
+        p = masked_mean(predictor_out, pmask, dim=1)
+
+        # project
+        e = self.e_latent(e)
+        p = self.p_latent(p)
+
+        # normalize
+        e, p = map(lambda t: F.normalize(t, p = 2, dim = -1), (e, p))
+
+        # loss
+        temp = self.temperature.exp()
+        sim = einsum('i d, j d -> i j', e, p) * temp
+        labels = torch.arange(N, device = x.device)
+        return sim, labels
 
 
 class CTCModel(Module):

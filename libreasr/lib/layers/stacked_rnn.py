@@ -127,7 +127,10 @@ class StackedRNN(nn.Module):
         bs = x.size(0)
         residual = 0.0
         new_states = []
-        suts = random.random() > (1.0 - self.utsp)
+        if self.utsp > 0.0:
+            suts = random.random() > (1.0 - self.utsp)
+        else:
+            suts = False
         for i, rnn in enumerate(self.rnns):
 
             # reduce if necessary

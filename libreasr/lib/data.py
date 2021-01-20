@@ -37,7 +37,7 @@ from libreasr.lib.transforms import update_tfms, update_tfms_multi, BatchNormali
 
 # x: maximum batch capacity
 #  n stacked frames
-X_MAX = 8 * 9000  # 6000 # 6500 # 7750
+X_MAX = 8 * 7000 # 9000  # 6000 # 6500 # 7750
 
 # y: maximum batch capacity
 #  n BPE tokens
@@ -46,8 +46,7 @@ Y_MAX_ONE = 90
 
 # bounded batch sizes
 BS_MIN = 4
-BS_MAX = 32
-BS_VALID = 8
+BS_MAX = 128   # 32
 
 # x: time dimension
 DIM_TIME = 1
@@ -110,7 +109,7 @@ class SortishDL(TfmdDL):
 
 @delegates(TfmdDL)
 class DynamicBucketingDL(TfmdDL):
-    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, **kwargs):
+    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=6., **kwargs):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
@@ -120,6 +119,7 @@ class DynamicBucketingDL(TfmdDL):
         self.idx_max = np.argmax(self.res)
         self.reverse = reverse
         self.tpls = tpls
+        self.umbs = mul_bs
 
     def get_idxs(self):
         idxs = super().get_idxs()
@@ -153,9 +153,9 @@ class DynamicBucketingDL(TfmdDL):
 
         # variable batch bucketing
         def is_adding_one_okay(xlen, ylen, xmax, ymax, bs):
-            xmaxok = xlen <= X_MAX
-            ymaxok = ylen <= Y_MAX
-            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE
+            xmaxok = xlen <= X_MAX * self.umbs
+            ymaxok = ylen <= Y_MAX * self.umbs
+            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE * self.umbs
             bsok = bs <= BS_MAX
             return xmaxok and ymaxok and multok and bsok
 
@@ -294,8 +294,8 @@ def sorter(tpl, y=False, noop=False):
     if noop:
         return 1
     if y:
-        return tpl.ylen
-    return tpl.xlen
+        return TupleGetter.ylen(tpl)
+    return TupleGetter.xlen(tpl)
 
 
 def preload_tfms(tfm_funcs, tfm_args):
@@ -319,13 +319,19 @@ def grab_asr_databunch(
 ) -> DataLoaders:
 
     # get all audio files
-    files_train, idxs_train, tpls_train, df_train = builder_train.get()
-    files_valid, idxs_valid, tpls_valid, df_valid = builder_valid.get()
+    _, idxs_train, tpls_train, _ = builder_train.get()
+    _, idxs_valid, tpls_valid, _ = builder_valid.get()
+
+    # convert tuples to numpy
+    # to make sure multiprocessing works
+    # as desired
+    tpls_train = np.array(tpls_train, dtype=np.object).astype(np.string_)
+    tpls_valid = np.array(tpls_valid, dtype=np.object).astype(np.string_)
 
     # pass information to the transforms
     # and create them later
-    extra_train = OrderedDict(tfms_args, files=files_train, tpls=tpls_train)
-    extra_valid = OrderedDict(tfms_args, files=files_valid, tpls=tpls_valid)
+    extra_train = OrderedDict(tfms_args, tpls=tpls_train)
+    extra_valid = OrderedDict(tfms_args, tpls=tpls_valid)
     extra_train = OrderedDict(extra_train, random=True,)
     extra_valid = OrderedDict(extra_valid, random=False,)
 

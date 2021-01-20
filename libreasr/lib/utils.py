@@ -188,3 +188,34 @@ def sanitize_str(o):
     # add space at beginning (for BPE)
     o = " " + o
     return o
+
+
+# /data/stt/data/yt/es/o4Eu7FtENbk.wav,1270,6910,y el fin de magris ganis es el portavoz,39,16000,False
+class TupleGetter:
+    @staticmethod
+    def file(tpl):
+        return tpl[0]
+
+    @staticmethod
+    def xstart(tpl):
+        return int(tpl[1])
+
+    @staticmethod
+    def xlen(tpl):
+        return int(tpl[2])
+
+    @staticmethod
+    def label(tpl):
+        return tpl[3].decode("utf-8")
+
+    @staticmethod
+    def ylen(tpl):
+        return int(tpl[4])
+
+    @staticmethod
+    def sr(tpl):
+        return int(tpl[5])
+
+    @staticmethod
+    def bad(tpl):
+        raise Exception("not implemented")

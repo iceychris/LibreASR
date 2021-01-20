@@ -244,7 +244,7 @@ class ASRLearner(Learner):
             db,
             m,
             loss_func=get_loss_func(
-                "rnnt",
+                conf["loss"]["type"],
                 conf["cuda"]["device"],
                 conf["model"]["encoder"]["reduction_factor"],
                 noisystudent=conf["training"]["noisystudent"],

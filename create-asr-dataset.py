@@ -19,20 +19,10 @@ mimetypes.types_map[".flac"] = "audio/flac"
 from fastai2_audio.core.all import get_audio_files
 
 from libreasr.lib.utils import sanitize_str
+from IPython.core.debugger import set_trace
 
 
 PRINT_DROP = False
-
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
 def save(df, path, print_fun=print):
@@ -99,7 +89,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max-xlen",
-        default=20000,
+        default=30000,
         type=int,
         help="maximum audio length in milliseconds",
     )
@@ -111,6 +101,12 @@ if __name__ == "__main__":
         default="asr-dataset.csv",
         type=str,
         help="name of the resulting csv file",
+    )
+    parser.add_argument(
+        "--random-chunks",
+        default=0,
+        type=int,
+        help="use random block sizes for a single audio file",
     )
     parser.add_argument(
         "--filter",
@@ -225,10 +221,24 @@ if __name__ == "__main__":
         import webvtt
         from collections import Counter
 
-        def chunks(lst, n):
+        def chunks_regular(lst, n):
             """Yield successive n-sized chunks from lst."""
             for i in range(0, len(lst), n):
                 yield lst[i : i + n]
+
+        def chunks_random(lst, n):
+            """Yield successive random-sized chunks from lst."""
+            i = 0
+            while i < len(lst):
+                sz = random.choice(n)
+                i += sz
+                yield lst[i : i + sz]
+            yield lst[i:]
+
+        if args.random_chunks > 0:
+            chunks = chunks_random
+        else:
+            chunks = chunks_regular
 
         def parse_timestamp(tsp):
             "00:04:06.209"
@@ -247,7 +257,7 @@ if __name__ == "__main__":
         def get_labels(file, duration):
 
             # get block size
-            if isinstance(args.block_size, list):
+            if isinstance(args.block_size, list) and args.random_chunks == 0:
                 block_size = random.choice(args.block_size)
             else:
                 block_size = args.block_size
@@ -362,6 +372,14 @@ if __name__ == "__main__":
 
     # filter out bad ones
     df = df[df.bad == False]
+
+    # final print
+    try:
+        print("> xlen (sum ):", df.xlen.values.sum() / 1000. / 3600., "hours")
+        print("> xlen (mean):", df.xlen.values.mean() / 1000., "seconds")
+        print("> xlen (std ):", df.xlen.values.std() / 1000., "seconds")
+    except:
+        pass
 
     # final save
     save(df, save_path)

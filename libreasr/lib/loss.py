@@ -71,6 +71,12 @@ def get_loss_func(
         if noisystudent:
             loss_func_ns = nn.KLDivLoss(log_target=True, reduction="none")
 
+    elif loss_type == "contrastive":
+        def l(a, *args, reduction="mean"):
+            return F.cross_entropy(*a, reduction=reduction)
+        loss_func = l
+        return l
+
     else:
         raise Exception(f"no such loss type: {loss_type}")
 

@@ -64,16 +64,17 @@ def debug(self, inp=None):
 torchaudio.set_audio_backend("sox_io")
 
 
+
 class OpenAudioSpan(Transform):
     def __init__(self, tpls):
         self.tpls = tpls
 
     def encodes(self, i) -> AudioTensor:
         tpl = self.tpls[i]
-        fname = tpl.file
+        fname = TupleGetter.file(tpl)
 
         sr = 16000
-        sr_csv = tpl.sr
+        sr_csv = TupleGetter.sr(tpl)
         if sr_csv == -1:
             # determine sr while loading
             use_sr_csv = False
@@ -84,15 +85,17 @@ class OpenAudioSpan(Transform):
             sr = sr_csv
 
         # crop
-        if hasattr(tpl, "xstart") and not math.isnan(tpl.xstart):
-            xstart = int((tpl.xstart / 1000.0) * sr)
+        xstart = TupleGetter.xstart(tpl)
+        if not math.isnan(xstart):
+            xstart = int((xstart / 1000.0) * sr)
         else:
             xstart = 0
         pad = int(0.5 * sr)
-        if int(tpl.xlen) == -1 or math.isnan(tpl.xlen):
+        xlen = TupleGetter.xlen(tpl)
+        if int(xlen) == -1 or math.isnan(xlen):
             xlen = 800000
         else:
-            xlen = int((tpl.xlen / 1000.0) * sr) + pad
+            xlen = int((xlen / 1000.0) * sr) + pad
         sig, sr_sig = torchaudio.load(fname, frame_offset=xstart, num_frames=xlen)
         return AudioTensor(sig, sr=sr_csv if use_sr_csv else sr_sig)
 
@@ -100,8 +103,7 @@ class OpenAudioSpan(Transform):
 class MyOpenAudio(Transform):
     order = 0
 
-    def __init__(self, files, tpls, **kwargs):
-        self.files = files
+    def __init__(self, tpls, **kwargs):
         self.tpls = tpls
         self.oa = OpenAudioSpan(tpls)
 
@@ -508,14 +510,12 @@ class Buffer(Transform):
 class MyOpenLabel(Transform):
     order = 0
 
-    def __init__(self, files, tpls, label_idx=2, **kwargs):
-        self.files = files
+    def __init__(self, tpls, **kwargs):
         self.tpls = tpls
-        self.label_idx = label_idx
 
     def encodes(self, i) -> str:
         debug(self)
-        return self.tpls[i].label  # [self.label_idx]
+        return TupleGetter.label(self.tpls[i])
 
 
 class PadCutLabel(Transform):

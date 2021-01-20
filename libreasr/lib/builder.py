@@ -20,6 +20,15 @@ CSV = {
 
 TOKENIZER_MODEL_FILE = "tmp/tokenizer.yttm-model"
 CORPUS_FILE = "tmp/corpus.txt"
+COLUMNS = [
+    "file",
+    "xstart",
+    "xlen",
+    "label",
+    "ylen",
+    "sr",
+    "bad",
+]
 
 
 def resolve_csv_path(path, mode, suffix):
@@ -33,6 +42,18 @@ def resolve_csv_path(path, mode, suffix):
     return path / CSV[mode]
 
 
+def get_dataset_paths(conf, mode):
+    lang = conf["lang"]
+    if lang == "multi":
+        paths = []
+        for l in conf["datasets"].keys():
+            dses_l = [conf["dataset_paths"][x] for x in conf["datasets"][l][mode]]
+            [paths.append(x) for x in dses_l]
+    else:
+        paths = [conf["dataset_paths"][x] for x in conf["datasets"][lang][mode]]
+    return paths
+
+
 class ASRDatabunchBuilder:
     def __init__(self):
         self.do_shuffle = False
@@ -42,7 +63,7 @@ class ASRDatabunchBuilder:
     @staticmethod
     def from_config(conf, mode):
         lang = conf["lang"]
-        paths = [conf["dataset_paths"][x] for x in conf["datasets"][lang][mode]]
+        paths = get_dataset_paths(conf, mode)
         pcent = conf["pcent"][mode]
         suffix = conf.get("suffix", "")
         builder = (
@@ -151,6 +172,13 @@ class ASRDatabunchBuilder:
             self.df = self.df.sample(frac=1, random_state=seed)
         if sort:
             self.df.sort_values(by="label", inplace=True)
+
+        # reorder columns
+        self.df = self.df.reindex(COLUMNS, axis=1)
+
+        # encode labels
+        self.df.label = self.df.label.str.encode("utf-8")
+
         self.built = True
         return self
 
