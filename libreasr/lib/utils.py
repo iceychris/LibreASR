@@ -190,17 +190,32 @@ def sanitize_str(o):
     return o
 
 
-def maybe_quantize(model, debug=True):
-    name = model.__class__.__name__
-    try:
-        model = torch.quantization.quantize_dynamic(
-            model, {torch.nn.LSTM, torch.nn.Linear}, dtype=torch.qint8
-        )
-        if debug:
-            print(f"[quantization] {name} done.")
-    except:
-        if debug:
-            print(
-                f"[quantization] {name} failed. Might lead to degraded model performance."
-            )
-    return model
+# /data/stt/data/yt/es/o4Eu7FtENbk.wav,1270,6910,y el fin de magris ganis es el portavoz,39,16000,False
+class TupleGetter:
+    @staticmethod
+    def file(tpl):
+        return tpl[0]
+
+    @staticmethod
+    def xstart(tpl):
+        return int(tpl[1])
+
+    @staticmethod
+    def xlen(tpl):
+        return int(tpl[2])
+
+    @staticmethod
+    def label(tpl):
+        return tpl[3].decode("utf-8")
+
+    @staticmethod
+    def ylen(tpl):
+        return int(tpl[4])
+
+    @staticmethod
+    def sr(tpl):
+        return int(tpl[5])
+
+    @staticmethod
+    def bad(tpl):
+        raise Exception("not implemented")

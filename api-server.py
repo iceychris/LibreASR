@@ -22,7 +22,7 @@ PORTS = {
 
 # streaming
 # reset threshold
-THRESH = 4000
+THRESH = 8000 # 4000
 BUFFER_N_FRAMES = 3
 
 

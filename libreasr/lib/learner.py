@@ -224,7 +224,7 @@ class ASRLearner(Learner):
 
         else:
             raise Exception("No such optimizer")
-        acnb = conf["accumulate_n_batches"]
+        acnb = conf["batching"]["accumulate"]
         if acnb > 1 and not optim == "adahessian":
             cbs.append(GradAccumCallback(num_batches=acnb))
         extra_cbs = []
@@ -244,13 +244,13 @@ class ASRLearner(Learner):
             db,
             m,
             loss_func=get_loss_func(
-                "rnnt",
+                conf["loss"]["type"],
                 conf["cuda"]["device"],
                 conf["model"]["encoder"]["reduction_factor"],
+                noisystudent=conf["training"]["noisystudent"],
                 debug=False,
                 perf=False,
                 div_by_len=False,
-                entropy_loss=False,
             ),
             opt_func=opt_func,
             splitter=partial(transducer_splitter, adahessian=(optim == "adahessian")),

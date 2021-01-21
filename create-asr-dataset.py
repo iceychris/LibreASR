@@ -2,6 +2,7 @@ from functools import partial
 from pathlib import Path
 import multiprocessing
 import glob
+import random
 
 import tqdm
 import pandas as pd
@@ -13,25 +14,15 @@ import torchaudio
 # fastai2_audio
 # add flac to supported audio types
 import mimetypes
-
 mimetypes.types_map[".flac"] = "audio/flac"
+
 from fastai2_audio.core.all import get_audio_files
 
 from libreasr.lib.utils import sanitize_str
+from IPython.core.debugger import set_trace
 
 
 PRINT_DROP = False
-
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
 def save(df, path, print_fun=print):
@@ -80,9 +71,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--block-size",
-        default=2,
-        type=int,
-        help="in case of vtt format, how many sentences to collect together (min: 2)",
+        default="2",
+        type=str,
+        help="in case of vtt format, how many sentences to collect together (min: 2). For mixing, use e.g. [4,6,8]",
     )
     parser.add_argument(
         "--save-every-pcent",
@@ -97,6 +88,12 @@ if __name__ == "__main__":
         help="print info every N% of all files",
     )
     parser.add_argument(
+        "--max-xlen",
+        default=30000,
+        type=int,
+        help="maximum audio length in milliseconds",
+    )
+    parser.add_argument(
         "--lang", default="en", type=str, help="language",
     )
     parser.add_argument(
@@ -106,22 +103,29 @@ if __name__ == "__main__":
         help="name of the resulting csv file",
     )
     parser.add_argument(
-        "--soundfile",
-        type=str2bool,
-        const=True,
-        default=False,
-        nargs="?",
-        help="use torchaudio soundfile implementation",
+        "--random-chunks",
+        default=0,
+        type=int,
+        help="use random block sizes for a single audio file",
+    )
+    parser.add_argument(
+        "--filter",
+        default="",
+        type=str,
+        help="filter the files by this csv",
     )
     args = parser.parse_args()
-
-    if args.soundfile:
-        torchaudio.set_audio_backend("soundfile")
 
     path = Path(args.path)
     dataset = args.dataset
     p = path
     save_path = path / args.out
+
+    # parse block-size
+    try:
+        args.block_size = int(args.block_size)
+    except:
+        args.block_size = eval(args.block_size)
 
     # create df
     # see if exists
@@ -147,8 +151,15 @@ if __name__ == "__main__":
 
     # filter out files that are already in the df
     files = pd.Series([str(x) for x in files])
-    res = files.isin(df.file)
-    files = [Path(x) for x in files[~res].tolist()]
+    res = ~files.isin(df.file)
+
+    # filter out files that are in --filter if specified
+    if args.filter != "":
+        df_filter = pd.read_csv(p / args.filter)
+        res2 = files.isin(pd.unique(df_filter.file))
+        res = res & res2
+
+    files = [Path(x) for x in files[res].tolist()]
     print("> filtered files:", len(files))
 
     # get_labels for each dataset format
@@ -210,10 +221,24 @@ if __name__ == "__main__":
         import webvtt
         from collections import Counter
 
-        def chunks(lst, n):
+        def chunks_regular(lst, n):
             """Yield successive n-sized chunks from lst."""
             for i in range(0, len(lst), n):
                 yield lst[i : i + n]
+
+        def chunks_random(lst, n):
+            """Yield successive random-sized chunks from lst."""
+            i = 0
+            while i < len(lst):
+                sz = random.choice(n)
+                i += sz
+                yield lst[i : i + sz]
+            yield lst[i:]
+
+        if args.random_chunks > 0:
+            chunks = chunks_random
+        else:
+            chunks = chunks_regular
 
         def parse_timestamp(tsp):
             "00:04:06.209"
@@ -231,8 +256,13 @@ if __name__ == "__main__":
 
         def get_labels(file, duration):
 
+            # get block size
+            if isinstance(args.block_size, list) and args.random_chunks == 0:
+                block_size = random.choice(args.block_size)
+            else:
+                block_size = args.block_size
+
             # parse vtt file
-            block_size = args.block_size
             label_file = f"{file.parent}/{file.stem}.{args.lang}.vtt"
             # print(label_file)
             try:
@@ -292,7 +322,7 @@ if __name__ == "__main__":
                     continue
 
                 # keep automatic captions (drop closed captions)
-                if int(end - start) % 1000 == 0:
+                if int(end - start) % 1000 == 0 or int(end - start) > args.max_xlen:
                     # print("drop", file.stem, "closed captions")
                     continue
 
@@ -342,6 +372,14 @@ if __name__ == "__main__":
 
     # filter out bad ones
     df = df[df.bad == False]
+
+    # final print
+    try:
+        print("> xlen (sum ):", df.xlen.values.sum() / 1000. / 3600., "hours")
+        print("> xlen (mean):", df.xlen.values.mean() / 1000., "seconds")
+        print("> xlen (std ):", df.xlen.values.std() / 1000., "seconds")
+    except:
+        pass
 
     # final save
     save(df, save_path)

@@ -11,7 +11,7 @@ from libreasr.lib.utils import n_params, what, wrap_transform
 from libreasr.lib.language import get_language
 from libreasr.lib.builder import ASRDatabunchBuilder
 from libreasr.lib.data import ASRDatabunch
-from libreasr.lib.models import Transducer, CTCModel
+from libreasr.lib.models import get_model
 from libreasr.lib.learner import ASRLearner
 from libreasr.lib.lm import load_lm
 
@@ -141,15 +141,16 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         except:
             print("[LM] Failed to load.")
 
-    # grab model
-    m = Transducer.from_config(conf, lang)
-    # print(n_params(m))
+    # grab model instance
+    m = get_model(conf, lang)
 
     if inference:
         # load weights
         from libreasr.lib.model_utils import load_asr_model
 
-        load_asr_model(m, lang_name, lang, conf["cuda"]["device"], lm=lm)
+        load_asr_model(
+            m, lang_name, lang, conf["model"]["path"], conf["cuda"]["device"], lm=lm
+        )
         m.lm = lm
         m.lang = lang
 
@@ -160,5 +161,6 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     else:
         # grab learner
         learn = ASRLearner.from_config(conf, db, m)
+        learn.lang = lang
 
         return conf, lang, builder_train, builder_valid, db, m, learn

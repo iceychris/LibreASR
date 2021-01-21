@@ -78,6 +78,18 @@ class Tensorboard(Callback):
             self.writer.add_scalar(
                 "data/batch_size", self.learn.xb[0][0].size(0), self.train_batch_count
             )
+        """
+        try:
+            q = self.learn.model.student.encoder.rnn_stack.rnns[2].weight_hh_l0
+            print(q.mean(), q.grad.mean() if q.requires_grad else None)
+        except:
+            pass
+        try:
+            q = self.learn.model.encoder.rnn_stack.rnns[2].weight_hh_l0
+            print(q.mean(), q.grad.mean() if q.requires_grad else None)
+        except:
+            pass
+        """
 
     def after_step(self):
         if self.steps % LOG_EVERY_N_STEPS == 0:

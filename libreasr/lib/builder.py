@@ -20,18 +20,55 @@ CSV = {
 
 TOKENIZER_MODEL_FILE = "tmp/tokenizer.yttm-model"
 CORPUS_FILE = "tmp/corpus.txt"
+COLUMNS = [
+    "file",
+    "xstart",
+    "xlen",
+    "label",
+    "ylen",
+    "sr",
+    "bad",
+]
+
+
+def resolve_csv_path(path, mode, suffix):
+    p = CSV[mode]
+    p = p.replace("train", f"{suffix}-train")
+    p = p.replace("valid", f"{suffix}-valid")
+    p = p.replace("test", f"{suffix}-test")
+    p = path / p
+    if p.exists():
+        return p
+    return path / CSV[mode]
+
+
+def get_dataset_paths(conf, mode):
+    lang = conf["lang"]
+    if lang == "multi":
+        paths = []
+        for l in conf["datasets"].keys():
+            dses_l = [conf["dataset_paths"][x] for x in conf["datasets"][l][mode]]
+            [paths.append(x) for x in dses_l]
+    else:
+        paths = [conf["dataset_paths"][x] for x in conf["datasets"][lang][mode]]
+    return paths
 
 
 class ASRDatabunchBuilder:
     def __init__(self):
         self.do_shuffle = False
         self.mode = None
+        self.suffix = ""
 
     @staticmethod
     def from_config(conf, mode):
-        paths = [conf["dataset_paths"][x] for x in conf["datasets"]]
+        lang = conf["lang"]
+        paths = get_dataset_paths(conf, mode)
         pcent = conf["pcent"][mode]
-        builder = ASRDatabunchBuilder().set_mode(mode).multi(paths, pcent)
+        suffix = conf.get("suffix", "")
+        builder = (
+            ASRDatabunchBuilder().set_mode(mode).set_suffix(suffix).multi(paths, pcent)
+        )
         if conf["apply_limits"]:
             builder = (
                 builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
@@ -47,16 +84,24 @@ class ASRDatabunchBuilder:
         self.mode = mode
         return self
 
+    def set_suffix(self, suffix):
+        self.suffix = suffix
+        return self
+
     def single(self, path):
         path = Path(path)
-        self.df = pd.read_csv(path / CSV[self.mode])
+        q = resolve_csv_path(path, self.mode, self.suffix)
+        self.df = pd.read_csv(q)
+        print(f"[builder] [{self.mode}] df {q} loaded.")
         return self
 
     def multi(self, paths, pcent=1.0):
         dfs = []
         for path in paths:
             path = Path(path)
-            df = pd.read_csv(path / CSV[self.mode])
+            q = resolve_csv_path(path, self.mode, self.suffix)
+            df = pd.read_csv(q)
+            print(f"[builder] [{self.mode}] df {q} loaded.")
             if pcent != 1.0:
                 df = df.sample(frac=pcent)
             dfs.append(df)
@@ -127,6 +172,13 @@ class ASRDatabunchBuilder:
             self.df = self.df.sample(frac=1, random_state=seed)
         if sort:
             self.df.sort_values(by="label", inplace=True)
+
+        # reorder columns
+        self.df = self.df.reindex(COLUMNS, axis=1)
+
+        # encode labels
+        self.df.label = self.df.label.str.encode("utf-8")
+
         self.built = True
         return self
 
@@ -138,11 +190,26 @@ class ASRDatabunchBuilder:
         return _fs, _is, _ts, df
 
     def print(self):
+        def output(a, b):
+            a, b = str(a), str(b)
+            la = len(a)
+            b = b.rjust(40 - la)
+            print(f"{a}: {b}")
+
         if self.built:
-            print("mode:", self.mode)
-            print("num samples:", len(self.df))
-            print("num hours:", self.df.xlen.values.sum() / (1000.0 * 3600.0))
+            output("mode", self.mode)
+            output("num samples", len(self.df))
+            output(f"num hours", f"{self.df.xlen.values.sum() / (1000.0 * 3600.0):.2f}")
+            output(
+                f"sample duration mean",
+                f"{self.df.xlen.values.mean() / 1000.0:.2f} sec",
+            )
+            output(
+                f"sample duration std", f"{self.df.xlen.values.std() / 1000.0:.2f} sec"
+            )
+            print()
             print(self.df.head())
+            print()
         return self
 
     def dump_labels(self, to_file=CORPUS_FILE):

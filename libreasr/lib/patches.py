@@ -19,13 +19,13 @@ from IPython.core.debugger import set_trace
 def test(
     self: Learner,
     pcent=0.5,
-    min_samples=320,
+    min_samples=800,
     device="cuda:0",
     train=False,
     mp=False,
     save_best=True,
 ):
-    lang = self.model.lang
+    lang = self.lang
     m = self.model.to(device)
 
     # choose train or valid dl
@@ -85,7 +85,7 @@ def test(
     # maybe save best
     if hasattr(self, "best_wer"):
         if _wer < self.best_wer:
-            if save_best:
+            if save_best and _wer < 1.0:
                 self.save("best_wer", with_opt=True)
                 print("New best WER saved:", _wer)
             else:
@@ -99,7 +99,7 @@ def test(
     # plt.show()
 
     last = f"true: {_true} | pred: {_pred}"
-    print(f"CER={_cer:.3f} | WER={_wer:.3f} | {last}")
+    print(f"CER={_cer:.4f} | WER={_wer:.4f} | {last}")
     yield {
         "metrics/mean_alignment_score": np.array(aligns).mean(),
         "metrics/mean_cer": _cer,

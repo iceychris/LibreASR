@@ -1,1 +1,1 @@
-from libreasr.lib.layers.custom_rnn import CustomCPURNN, CustomGPURNN
+from libreasr.lib.layers.stacked_rnn import StackedRNN

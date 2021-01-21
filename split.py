@@ -45,15 +45,22 @@ if __name__ == "__main__":
     parser.add_argument(
         "--seed", default=42, type=int, help="random seed used while splitting"
     )
+    parser.add_argument(
+        "--out",
+        default="asr-dataset.csv",
+        type=str,
+        help="name of the resulting csv file",
+    )
     args = parser.parse_args()
 
     path = Path(args.path)
     p = path
 
-    df_path = p / "asr-dataset.csv"
-    path_train = p / "asr-dataset-train.csv"
-    path_valid = p / "asr-dataset-valid.csv"
-    path_test = p / "asr-dataset-test.csv"
+    out = args.out
+    df_path = p / args.out
+    path_train = p / args.out.replace(".csv", "-train.csv")
+    path_valid = p / args.out.replace(".csv", "-valid.csv")
+    path_test = p / args.out.replace(".csv", "-test.csv")
 
     # check if exists
     if df_path.exists():
@@ -62,13 +69,21 @@ if __name__ == "__main__":
     else:
         raise Exception("asr-dataset.csv does not exist")
 
+    # get unqiue files
+    all_uniq = pd.unique(df.file)
+
     # first, train and non_train
     train, non_train = train_test_split(
-        df, test_size=args.split * 2.0, random_state=args.seed
+        all_uniq, test_size=args.split * 2.0, random_state=args.seed
     )
 
     # then, valid and test
     valid, test = train_test_split(non_train, test_size=0.5, random_state=args.seed)
+
+    # convert to dfs
+    train = df[df.file.isin(train)]
+    valid = df[df.file.isin(valid)]
+    test = df[df.file.isin(test)]
 
     # save
     check_save(train, path_train)

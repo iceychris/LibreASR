@@ -34,10 +34,9 @@ def get_loss_func(
     loss_type,
     device,
     reduction_factor,
+    noisystudent=False,
     debug=True,
     perf=True,
-    entropy_loss=False,
-    zero_loss=False,
     div_by_len=False,
     zero_nan=True,
     zero_inf=True,
@@ -66,13 +65,17 @@ def get_loss_func(
         loss_func = CTCLoss(zero_infinity=True, reduction="none").to(device)
 
     elif loss_type == "rnnt":
-        # from warprnnt_pytorch import RNNTLoss
-        # loss_func = RNNTLoss(reduction='none').to(device)
-
-        # faster
         from warp_rnnt import rnnt_loss
 
         loss_func = partial(rnnt_loss, average_frames=False)
+        if noisystudent:
+            loss_func_ns = nn.KLDivLoss(log_target=True, reduction="none")
+
+    elif loss_type == "contrastive":
+        def l(a, *args, reduction="mean"):
+            return F.cross_entropy(*a, reduction=reduction)
+        loss_func = l
+        return l
 
     else:
         raise Exception(f"no such loss type: {loss_type}")
@@ -80,6 +83,10 @@ def get_loss_func(
     def _loss_func(inp, tgt, reduction="mean", **kwargs):
         if perf:
             t = time.time()
+
+        # extract if noisystudent training
+        if isinstance(inp, tuple):
+            teacher_logits, inp = inp
 
         # unpack
         tgt, tgt_lens, inp_lens = tgt
@@ -103,16 +110,29 @@ def get_loss_func(
         # do loss calculation
         inp, tgt = inp.to(device), tgt.to(device)
         inp_lens, tgt_lens = inp_lens.to(device), tgt_lens.to(device)
-        loss = loss_func(inp, tgt, inp_lens, tgt_lens)
-        if entropy_loss:
-            el = entropy_crit(inp)
-            # print("el   ", el.mean())
-            # print("loss ", loss.mean())
-            loss += el
-        if zero_loss:
-            zl = (1 / (inp[:, :, 0].abs() + 1e-5)).mean(-1) * tgt_lens * 1.0
-            # print(loss.mean(), zl.mean())
-            loss += zl
+        if noisystudent:
+            # perform log softmax as we did not do it before
+            inp_sm = F.log_softmax(inp, dim=-1)
+        loss = loss_func(inp_sm if noisystudent else inp, tgt, inp_lens, tgt_lens)
+
+        # noisy student loss
+        if noisystudent:
+
+            # params
+            alpha = 0.001
+            T = 1.0
+
+            # weighted loss
+            loss_rnnt = loss * (1.0 - alpha)
+            loss_ns = loss_func_ns(
+                F.log_softmax(inp / T, dim=-1),
+                F.log_softmax(teacher_logits / T, dim=-1),
+            ) * (alpha * T * T)
+            loss_ns = loss_ns.mean((1, 2, 3)) * 20000.0 * 5
+
+            # print(f"RNN-T: {loss_rnnt.mean():.2f}, NS: {loss_ns.mean():.2f}")
+
+            loss = loss_rnnt + loss_ns
 
         # divide by tgt lens
         if div_by_len:

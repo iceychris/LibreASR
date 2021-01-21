@@ -3,7 +3,8 @@ import torch.quantization
 import torch.nn as nn
 import torch.nn.functional as F
 
-from libreasr.lib.utils import standardize, maybe_quantize
+from libreasr.lib.utils import standardize
+from libreasr.lib.quantization import maybe_post_quantize
 
 
 ALPHA = 0.1
@@ -90,7 +91,7 @@ def load_lm(conf, lang):
     lm.eval()
 
     # quantize
-    lm = maybe_quantize(lm)
+    lm = maybe_post_quantize(lm)
     lm.eval()
 
     return lm
