@@ -46,7 +46,7 @@ Y_MAX_ONE = 90
 
 # bounded batch sizes
 BS_MIN = 4
-BS_MAX = 128   # 32
+BS_MAX = 32
 
 # x: time dimension
 DIM_TIME = 1
@@ -109,7 +109,7 @@ class SortishDL(TfmdDL):
 
 @delegates(TfmdDL)
 class DynamicBucketingDL(TfmdDL):
-    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=6., **kwargs):
+    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=1., **kwargs):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
@@ -350,6 +350,8 @@ def grab_asr_databunch(
 
     sorted_dl_args_valid = sorted_dl_args.copy()
     sorted_dl_args_valid["bs"] = bs_valid
+    # set this to True for rnnt training to make sure
+    # learn.test() happens on unsorted data
     sorted_dl_args_valid["shuffle"] = True
     sorted_dl_args_valid["tpls"] = tpls_valid
 
