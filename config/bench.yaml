@@ -1,0 +1,425 @@
+###
+# data
+###
+
+transforms:        
+
+  # independent variable
+  x:
+    - name: MyOpenAudio
+    - name: ChannelCut
+
+    # resampling
+    - name: Resample
+
+    # augmentation
+    - name: ResamplePoly
+      wrap: true
+      partial: true
+      args:
+        delta: 10
+    - name: ChangeVolume
+      wrap: true
+      partial: true
+      args:
+        pcent: 0.03
+    - name: MyAddNoise
+      wrap: true
+      partial: true
+      args:
+        noise_level: 0.05
+        color: 0
+    - name: MySignalShifter
+      wrap: true
+      partial: true
+      args:
+        max_time: 0.1
+        direction: 1
+    - name: PadderCutter
+    - name: TransformTime
+    - name: MyCutFrames
+      wrap: true
+      partial: true
+      args:
+        max_front: 1
+        max_back: 1
+    - name: MyMaskTime
+      wrap: true
+      partial: true
+      args:
+        num_masks: 2
+        size: 4
+    - name: MyMaskFreq
+      wrap: true
+      partial: true
+      args:
+        num_masks: 4
+        size: 4
+
+    # reduce time dimension
+    #  by downsample
+    # and stack
+    - name: StackDownsample
+      partial: true
+      args:
+        downsample: 8
+        n_stack: 10
+
+    # make data ready for batching
+    - name: FixDimensions
+
+  # dependent variable
+  y:
+    - name: MyOpenLabel
+    - name: PadCutLabel
+    - name: MyNumericalize
+    - name: AddLen
+
+# set the used language
+#  "multi" for multilingual
+lang: en
+
+# datasets
+dataset_paths: 
+    tf-speech: "/data/stt/data/tf-speech-recognition/train"
+    tatoeba-en: "/data/stt/data/tatoeba/en"
+    librispeech-0: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-100"
+    librispeech-1: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-360"
+    librispeech-2: "/data/stt/data/librispeech/audio/LibriSpeech/train-other-500"
+    common-voice-en: "/data/stt/data/common-voice/en"
+    common-voice-de: "/data/stt/data/common-voice/de"
+    common-voice-fr: "/data/stt/data/common-voice/fr"
+    common-voice-es: "/data/stt/data/common-voice/es"
+    yt-en: "/data/stt/data/yt/en/en/data"
+    yt-de: "/data/stt/data/yt/de/de"
+    yt-fr: "/data/stt/data/yt/fr"
+    yt-es: "/data/stt/data/yt/es"
+    ls: "/workspace/data/LibriSpeech"
+
+# selected datasets
+datasets:
+  en:
+    train:
+      - ls
+    valid:
+      - ls
+  de:
+    train:
+      - common-voice-de
+      - yt-de
+    valid:
+      - common-voice-de
+      # - yt-de
+  fr:
+    train:
+      - common-voice-fr
+      - yt-fr
+    valid:
+      - common-voice-fr
+      # - yt-fr
+  es:
+    train:
+      - common-voice-es
+      - yt-es
+    valid:
+      - common-voice-es
+      # - yt-es
+
+# percentage of each individual dataframe used
+#  (stage: builder)
+pcent:
+    train: 1.0 # 0.25 # 1.0
+    valid: 1.0  # 1.0
+    test: 1.0
+
+
+###
+# audio & spectrogram
+###
+
+sr: 16000
+channels: 1
+mfcc: True
+mfcc_args: {}
+melkwargs:
+  n_fft: 1024
+  n_mels: 128
+
+# seconds
+win_length: 0.025
+hop_length: 0.01
+
+# N frames
+delta_win_length: 3
+deltas: 0
+
+# concat N future frames
+n_forward_frames: 0
+
+
+###
+# labels
+###
+
+tokenizer:
+  model_file: "./tmp/tokenizer.yttm-model"
+
+
+###
+# data limits
+###
+
+# apply the following limits
+# at the builder stage?
+apply_limits: True
+
+# audio length [seconds]
+almins: 0.5
+almaxs: 10.0 # 20.0 # 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+
+# label length [characters]
+y_min: 1
+y_max: 150 # 350 # 180 # 120 # 80 # 130 # 80 # 60 # 100
+y_max_words: 100
+
+# which dataset to use
+suffix: "" # "cat-longy" # "cat-mix" # cat-4
+
+
+###
+# GPU options
+###
+
+cuda:
+  enable: false
+
+  # use cudnn benchmark for better runtime perf
+  benchmark: false
+
+  # set default cuda device (to avoid errors?)
+  # see: https://discuss.pytorch.org/t/runtime-error-77/9392/9?u=sbelharbi
+  device: "cpu"
+
+
+###
+# CPU options
+###
+
+cpu:
+  threads: 4
+
+
+###
+# model
+###
+
+model:
+  name: Transducer
+  feature_sz: 1280
+  embed_sz: 512
+  hidden_sz: 1024
+  out_sz: 1024
+  joint_sz: 1024
+  vocab_sz: 2048
+  encoder:
+    name: ConformerEncoder
+    rnn_type: "LSTM"
+    num_layers: 6
+    dropout: 0.05
+    reduction_factor: 1
+    reduction_factors: []
+    layer_norm: false
+    use_tmp_state_pcent: 0.99
+  predictor:
+    name: TransformerPredictor
+    rnn_type: "LSTM"
+    num_layers: 2
+    dropout: 0.05
+    layer_norm: false
+    use_tmp_state_pcent: 0.99
+  joint:
+    enable: false
+    method: "concat"
+    dropout: 0.0
+  layer_norm: false
+  use_tmp_bos: false
+  use_tmp_bos_pcent: 0.2
+quantized: false
+
+
+###
+# batching
+###
+
+# DEPRECATED
+# feature-wise norm over batch
+norm_file: "./tmp/norm.pt"
+
+# ascending data length?
+ascending: True
+
+# whether to sort batches (order) by size or not
+#  DataLoader
+shuffle: True
+
+# shuffle at builder stage
+shuffle_builder:
+    train: True
+    valid: True
+    test: True
+
+
+###
+# training
+###
+
+training:
+  optimizer: Ranger # AdaHessian
+
+  # use noisy student training
+  #  (a variant of knowledge distillation)
+  noisystudent: false
+
+
+###
+# other
+###
+
+# batch management
+batching:
+
+  # batch size for training dataset
+  #  (managed by DynamicBucketingDL)
+  batch_size_train: "auto"
+
+  # batch size for validation dataset
+  batch_size_valid: 128 # 8 # 32
+
+  # gradient accumulation
+  #  (number of batches)
+  accumulate: 1 # 10
+
+# losses
+loss:
+  type: "contrastive" # "rnnt"
+
+# mixed precision training
+mp: false
+mp_clip: 2.
+
+## tokenization
+# for training a tokenizer on the current corpus
+train_tokenizer: false
+dump_labels: false
+wanted_vocab_sz: 2048
+
+# random seed
+seed: 42
+
+# CPU workers
+#  3 -> fine for rnnt
+num_workers: 7
+
+# testing
+tensorboard: true
+wandb: false
+tests_per_epoch: 0 # 8
+
+# language model
+lm:
+  enable: true
+  vocab_sz: 2048
+  embed_sz: 1024
+  hidden_sz: 1024
+  num_layers: 6
+  p: 0.2
+
+
+###
+# inference
+###
+
+overrides:
+  en:
+    lm:
+      path: "./tmp/en/lm.pth"
+      embed_sz: 768
+      hidden_sz: 768
+      num_layers: 4
+      p: 0.3
+    model:
+      encoder:
+        num_layers: 6
+      predictor:
+        num_layers: 2
+      path: "./tmp/en/model.pth"
+    tokenizer:
+      model_file: "./tmp/en/tokenizer.yttm-model"
+  de:
+    lm:
+      path: "./tmp/de/lm.pth"
+      embed_sz: 768
+      hidden_sz: 768
+      num_layers: 4
+      p: 0.3
+    model:
+      encoder:
+        num_layers: 6
+      predictor:
+        num_layers: 2
+      path:
+      - "./tmp/de/encoder.pth"
+      - "./tmp/de/predictor.pth"
+      - "./tmp/de/joint.pth"
+    quantized: true
+    tokenizer:
+      model_file: "./tmp/de/tokenizer.yttm-model"
+  inference:
+    transforms:
+      x:
+        # to target sr + single channel
+        - name: Resample
+        - name: ChannelCut
+
+        # to spectrogram
+        - name: TransformTime
+
+        - name: StackDownsample
+          partial: true
+          args:
+            downsample: 8
+            n_stack: 10
+    
+        # add last dimension
+        - name: FixDimensions
+
+      stream:
+        - name: Resample
+        - name: ChannelCut
+          # - name: StreamPreprocess
+        - name: TransformTime
+        - name: StreamPostprocess
+          partial: true
+          args:
+            n_stack: 10
+        - name: StackDownsample
+          partial: true
+          args:
+            downsample: 8
+            n_stack: 10
+        - name: FixDimensions
+        - name: Buffer
+          partial: true
+          args:
+            n_buffer: 2
+    
+      y:
+        - name: MyOpenLabel
+        - name: MyNumericalize
+        - name: AddLen
+    bs: 1
+    cuda:
+      enable: false
+      device: "cpu"
+    # 10ms -> 160
+    chunk: 160

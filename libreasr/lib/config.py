@@ -66,7 +66,7 @@ def parse_transforms(conf, inference):
 
 
 def apply_cuda_stuff(conf):
-    if conf["cuda"]["enable"]:
+    if conf["cuda"]["enable"] and torch.cuda.is_available():
         if torch.cuda.is_available():
             torch.cuda.set_device(int(conf["cuda"]["device"].split(":")[1]))
             torch.backends.cudnn.benchmark = conf["cuda"]["benchmark"]

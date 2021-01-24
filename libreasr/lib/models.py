@@ -18,6 +18,7 @@ from IPython.core.debugger import set_trace
 
 from libreasr.lib.utils import *
 from libreasr.lib.layers import StackedRNN
+from libreasr.lib.layers.conformer import ConformerBlock
 from libreasr.lib.lm import LMFuser
 
 
@@ -219,19 +220,21 @@ class Transducer(Module):
         use_tmp_bos_pcent=0.99,
         encoder_kwargs={},
         predictor_kwargs={},
+        joint=True
         **kwargs,
     ):
-        self.encoder = Encoder(
+        self.encoder = eval(encoder_kwargs["name"])(
             feature_sz, hidden_sz=hidden_sz, out_sz=out_sz, **encoder_kwargs,
         )
-        self.predictor = Predictor(
+        self.predictor = eval(predictor_kwargs["name"])(
             vocab_sz,
             embed_sz=embed_sz,
             hidden_sz=hidden_sz,
             out_sz=out_sz,
             **predictor_kwargs,
         )
-        self.joint = Joint(out_sz, joint_sz, vocab_sz, joint_method)
+        if joint:
+            self.joint = Joint(out_sz, joint_sz, vocab_sz, joint_method)
         self.lang = lang
         self.blank = blank
         # TODO: dont hardcode
@@ -266,6 +269,7 @@ class Transducer(Module):
             use_tmp_bos_pcent=conf["model"]["use_tmp_bos_pcent"],
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
+            joint=conf["model"]["joint"]["enable"],
         ).to(conf["cuda"]["device"])
         m.mp = conf["mp"]
         return m
@@ -848,3 +852,93 @@ class CTCModel(Module):
         x = self.linear(x)
         x = F.log_softmax(x, -1)
         return x
+
+
+class ConformerEncoder(Module):
+    def __init__(
+        self,
+        feature_sz,
+        hidden_sz,
+        out_sz,
+        dropout=0.01,
+        num_layers=2,
+        trace=True,
+        device="cuda:0",
+        layer_norm=False,
+        rnn_type="LSTM",
+        use_tmp_state_pcent=0.9,
+        **kwargs,
+    ):
+        self.num_layers = num_layers
+        self.input_norm = nn.LayerNorm(feature_sz)
+        self.proj = nn.Linear(feature_sz, hidden_sz)
+        self.conformer = ConformerBlock(
+            dim = hidden_sz,
+            dim_head = 64,
+            heads = 8,
+            ff_mult = 4,
+            conv_expansion_factor = 2,
+            conv_kernel_size = 31,
+            attn_dropout = 0.,
+            ff_dropout = 0.,
+            conv_dropout = 0.
+        )
+        self.drop = nn.Dropout(dropout)
+        if not hidden_sz == out_sz:
+            self.linear = nn.Linear(hidden_sz, out_sz)
+        else:
+            self.linear = nn.Sequential()
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, x, state=None, lengths=None, return_state=False):
+        x = x.reshape((x.size(0), x.size(1), -1))
+        x = self.input_norm(x)
+        x = self.proj(x)
+        x = self.conformer(x)
+        x = self.drop(x)
+        x = self.linear(x)
+        if return_state:
+            return x, state
+        return x
+
+
+class TransformerPredictor(Module):
+    def __init__(
+        self,
+        vocab_sz,
+        embed_sz,
+        hidden_sz,
+        out_sz,
+        dropout=0.01,
+        num_layers=2,
+        blank=0,
+        layer_norm=False,
+        rnn_type="NBRC",
+        use_tmp_state_pcent=0.9,
+    ):
+        self.vocab_sz = vocab_sz
+        self.num_layers = num_layers
+        from x_transformers import TransformerWrapper, Encoder
+        self.transformer = model = TransformerWrapper(
+            num_tokens = vocab_sz,
+            max_seq_len = 1024,
+            attn_layers = Encoder(
+                dim = hidden_sz,
+                depth = 4, # 12
+                heads = 8
+            )
+        ) 
+        self.drop = nn.Dropout(dropout)
+        self.linear = nn.Linear(hidden_sz*2, hidden_sz)
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, x, state=None, lengths=None):
+        x = self.transformer(x)
+        print(x.shape)
+        x = self.drop(x)
+        x = self.linear(x)
+        return x, state

@@ -1,6 +1,7 @@
 from functools import partial
 import multiprocessing
 import math
+import time
 import sys
 import random
 from pathlib import Path
@@ -109,7 +110,7 @@ class SortishDL(TfmdDL):
 
 @delegates(TfmdDL)
 class DynamicBucketingDL(TfmdDL):
-    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=6., **kwargs):
+    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=1., **kwargs):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
@@ -406,7 +407,7 @@ def grab_asr_databunch(
         plt.title("# Batches per batch_size")
         plt.show()
 
-    def augmentation(self, n=1, only=None):
+    def augmentation(self, n=1, only=None, benchmark=False):
         aud_pipe = tfms_train[0]
         lbl_pipe = tfms_train[1]
         if only is None:
@@ -418,19 +419,32 @@ def grab_asr_databunch(
                 only = [list(range(len(aud_pipe)))[only]]
             else:
                 only = [only]
+        if benchmark:
+            times = {q.__class__.__name__: 0. for q in aud_pipe} 
         for i in range(n):
-            print("-" * 75)
-            print(f"{i}th item:")
             label = lbl_pipe[0](i)
-            print("label:", label)
+            if not benchmark:
+                print("-" * 75)
+                print(f"{i}th item:")
+                print("label:", label)
             for j, aud_step in enumerate(aud_pipe[1:]):
+                t1 = time.perf_counter()
                 if j == 0:
                     item = aud_pipe[0](i)
                 else:
                     item = aud_step(item)
+                t2 = time.perf_counter()
                 if j in only:
-                    s = f"After step #{j} ({aud_step.__class__}):"
-                    print(s)
+                    if benchmark:
+                        t = t2 - t1
+                        n = aud_step.__class__.__name__
+                        times[n] = times[n] + t
+                        # s = f"Step ({n.ljust(18)}): {t:.5f}s"
+                        # print(s)
+                    else:
+                        s = f"After step #{j} ({aud_step.__class__}):"
+                        print(s)
+                    
 
                     from librosa.display import specshow
 
@@ -444,21 +458,23 @@ def grab_asr_databunch(
                         else:
                             raise Exception("not plottable")
 
-                    desc = chained_try(
-                        [
-                            pplot,
-                            lambda x: (x.shape, x.mean(), x.std()),
-                            lambda x: (x.sig.shape, x.sig.mean(), x.sig.std()),
-                            lambda x: what(x),
-                        ],
-                        item,
-                    )
-                    print("item info:", desc)
-                    try:
-                        item.show()
-                    except:
-                        pass
-                        # plt.close
+                    if not benchmark:
+                        desc = chained_try(
+                            [
+                                pplot,
+                                lambda x: (x.shape, x.mean(), x.std()),
+                                lambda x: (x.sig.shape, x.sig.mean(), x.sig.std()),
+                                lambda x: what(x),
+                            ],
+                            item,
+                        )
+                        print("item info:", desc)
+                        try:
+                            item.show()
+                        except:
+                            pass
+        if benchmark:
+            return times
 
     from types import MethodType
 

@@ -29,6 +29,7 @@ COLUMNS = [
     "sr",
     "bad",
 ]
+ENCODING = "utf-8"
 
 
 def resolve_csv_path(path, mode, suffix):
@@ -177,7 +178,7 @@ class ASRDatabunchBuilder:
         self.df = self.df.reindex(COLUMNS, axis=1)
 
         # encode labels
-        self.df.label = self.df.label.str.encode("utf-8")
+        self.df.label = self.df.label.str.encode(ENCODING)
 
         self.built = True
         return self
@@ -218,7 +219,9 @@ class ASRDatabunchBuilder:
         os.makedirs(Path(to_file).parent, exist_ok=True)
         with open(to_file, "w") as f:
             for i, row in tqdm.tqdm(self.df.iterrows(), total=len(self.df)):
-                f.write(sanitize_str(row.label) + "\n")
+                # decode label
+                l = row.label.decode(ENCODING)
+                f.write(sanitize_str(l) + "\n")
         print("Done.")
 
     def train_tokenizer(
