@@ -18,7 +18,7 @@ from IPython.core.debugger import set_trace
 @patch
 def test(
     self: Learner,
-    pcent=0.5,
+    pcent=1.0,
     min_samples=800,
     device="cuda:0",
     train=False,

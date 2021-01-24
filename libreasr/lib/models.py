@@ -745,7 +745,12 @@ class QuantizedTransducer(Transducer):
         return self
 
 
-def masked_mean(t, mask, dim = 1):
+def masked_mean(t, mask, dim = 1, random=False):
+    if random:
+        r = torch.zeros(t.size(dim), dtype=t.dtype, device=t.device).uniform_() > 0.5
+        r[0] = 1
+        r = r.expand(mask.shape)
+        mask = mask & r
     t = t.masked_fill(~mask[:, :, None], 0.)
     return t.sum(dim = 1) / mask.sum(dim = 1)[..., None]
 
@@ -775,7 +780,7 @@ class ContrastiveTransducer(Transducer):
             self.joint.param_groups(),
         ]
 
-    def forward(self, tpl, softmax=True):
+    def forward(self, tpl, return_logits=False, softmax=True):
         """
         (x, y)
         x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
@@ -815,8 +820,8 @@ class ContrastiveTransducer(Transducer):
         pmask = torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
 
         # reduce
-        e = masked_mean(encoder_out, emask, dim=1)
-        p = masked_mean(predictor_out, pmask, dim=1)
+        e = masked_mean(encoder_out, emask, dim=1)   #, random=self.training)
+        p = masked_mean(predictor_out, pmask, dim=1) #, random=self.training)
 
         # project
         e = self.e_latent(e)
@@ -829,6 +834,8 @@ class ContrastiveTransducer(Transducer):
         temp = self.temperature.exp()
         sim = einsum('i d, j d -> i j', e, p) * temp
         labels = torch.arange(N, device = x.device)
+        if return_logits:
+            return e, p, sim, labels
         return sim, labels
 
 
