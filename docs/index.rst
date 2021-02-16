@@ -6,10 +6,34 @@
 Welcome to LibreASR's documentation!
 ====================================
 
+.. include::
+   README.rst
+
+Contents
+========
+
 .. toctree::
    :maxdepth: 2
 
-   docs.md
+   getting-started
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Training
+
+   training
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Deployment
+
+   deployment
+
+.. toctree::
+   :maxdepth: 2
+
+   funding
+   references
 
 
 API Reference
