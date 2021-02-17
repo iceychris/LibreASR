@@ -28,6 +28,7 @@ jobs:
           apt-get update
           apt-get install -y git
           git clone "https://github.com/${GITHUB_SRC_REPOSITORY}.git" .
+          git checkout dev
         shell: bash
 
       - name: Run build script for Sphinx pages
