@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
+  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/master/assets/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
 
 
