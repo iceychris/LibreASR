@@ -1,6 +1,6 @@
 # docs
 sphinx==3.3.1
-sphinx-rtd-theme==0.5.0
+# sphinx-rtd-theme==0.5.0
 sphinx-material==0.0.32
 recommonmark==0.7.1
 nbsphinx==0.8.1
@@ -24,7 +24,7 @@ git+https://github.com/rbracco/fastai2_audio.git@7d55d83823d6ea091413a2277c0fb2f
 # other
 Cython
 tensorboard
-youtokentome
+# youtokentome
 editdistance
 jiwer
 IPython==7.17.0
