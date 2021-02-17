@@ -6,8 +6,8 @@ pushd ./docs
 
 # setup
 apt-get update
-apt-get -y install git rsync python3-sphinx python3-pip
-pip3 install -y -r requirements.txt
+apt-get -y install git rsync pandoc python3-sphinx python3-pip
+pip3 install -r requirements.txt
 
 pwd ls -lah
 export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
