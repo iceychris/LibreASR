@@ -39,7 +39,7 @@ def get_loss_func(
     perf=True,
     div_by_len=False,
     zero_nan=True,
-    zero_inf=True,
+    zero_inf=False,
     keep_best_pcent=-0.75,
     keep_best_largest=True,
 ):
@@ -72,8 +72,11 @@ def get_loss_func(
             loss_func_ns = nn.KLDivLoss(log_target=True, reduction="none")
 
     elif loss_type == "contrastive":
-        def l(a, *args, reduction="mean"):
-            return F.cross_entropy(*a, reduction=reduction)
+        def l(loss, *args, reduction="mean"):
+            if reduction == "mean":
+                return loss.mean()
+            else:
+                return loss
         loss_func = l
         return l
 
@@ -96,7 +99,7 @@ def get_loss_func(
 
         # preprocess inp_lens
         # factor reduction in
-        inp_lens = inp_lens // reduction_factor
+        inp_lens = torch.clamp(inp_lens // reduction_factor, min=1, max=inp.size(1))
 
         # avoid NaN
         if zero_nan:

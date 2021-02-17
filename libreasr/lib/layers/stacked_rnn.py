@@ -30,6 +30,23 @@ def get_initial_state(rnn_type, hidden_size, init=torch.zeros):
     return h, tmp
 
 
+class WithPermute(nn.Module):
+    def __init__(
+        self,
+        module,
+        permutation,
+    ):
+        super().__init__()
+        self.mod = module
+        self.perm = permutation
+
+    def forward(self, x):
+        x = x.permute(self.perm)
+        x = self.mod(x)
+        x = x.permute(self.perm)
+        return x
+
+
 class StackedRNN(nn.Module):
     def __init__(
         self,
@@ -70,7 +87,8 @@ class StackedRNN(nn.Module):
         # norm (BN or LN)
         self.bns = nn.ModuleList()
         for i, o in zip(self._is, self._os):
-            norm = norm_cls(o)
+            n = norm_cls(o)
+            norm = WithPermute(n, (0, 2, 1)) if norm_cls == nn.BatchNorm1d else n
             self.bns.append(norm)
 
         # rezero
@@ -160,9 +178,7 @@ class StackedRNN(nn.Module):
             )
 
             # apply norm
-            x = x.permute(0, 2, 1)
             x = self.bns[i](x)
-            x = x.permute(0, 2, 1)
 
             # apply residual
             if self.rezero:

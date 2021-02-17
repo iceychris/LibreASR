@@ -45,10 +45,6 @@ X_MAX = 8 * 7000 # 9000  # 6000 # 6500 # 7750
 Y_MAX = 8 * 90  # 85
 Y_MAX_ONE = 90
 
-# bounded batch sizes
-BS_MIN = 4
-BS_MAX = 32
-
 # x: time dimension
 DIM_TIME = 1
 
@@ -110,7 +106,9 @@ class SortishDL(TfmdDL):
 
 @delegates(TfmdDL)
 class DynamicBucketingDL(TfmdDL):
-    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=1., **kwargs):
+    # contrastive: mul_bs=7.5
+    # rnnt: mul_bs=1.
+    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, bs_max=32, bs_mul=1., **kwargs):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
@@ -120,7 +118,8 @@ class DynamicBucketingDL(TfmdDL):
         self.idx_max = np.argmax(self.res)
         self.reverse = reverse
         self.tpls = tpls
-        self.umbs = mul_bs
+        self.bs_max = bs_max
+        self.bs_mul = bs_mul
 
     def get_idxs(self):
         idxs = super().get_idxs()
@@ -154,10 +153,10 @@ class DynamicBucketingDL(TfmdDL):
 
         # variable batch bucketing
         def is_adding_one_okay(xlen, ylen, xmax, ymax, bs):
-            xmaxok = xlen <= X_MAX * self.umbs
-            ymaxok = ylen <= Y_MAX * self.umbs
-            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE * self.umbs
-            bsok = bs <= BS_MAX
+            xmaxok = xlen <= X_MAX * self.bs_mul
+            ymaxok = ylen <= Y_MAX * self.bs_mul
+            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE * self.bs_mul
+            bsok = bs <= self.bs_max
             return xmaxok and ymaxok and multok and bsok
 
         batches = []
@@ -311,6 +310,7 @@ def grab_asr_databunch(
     tfms,
     tfms_args,
     sorted_dl_args,
+    shuffle_valid,
     pad_collate_float_args={},
     bs_valid=8,
     after_batch=[],
@@ -351,9 +351,12 @@ def grab_asr_databunch(
 
     sorted_dl_args_valid = sorted_dl_args.copy()
     sorted_dl_args_valid["bs"] = bs_valid
+
+    # rnnt: True
+    # contrastive: False
     # set this to True for rnnt training to make sure
     # learn.test() happens on unsorted data
-    sorted_dl_args_valid["shuffle"] = True
+    sorted_dl_args_valid["shuffle"] = shuffle_valid
     sorted_dl_args_valid["tpls"] = tpls_valid
 
     # create tfms
@@ -453,7 +456,10 @@ def grab_asr_databunch(
                     def pplot(x):
                         if isinstance(x, torch.Tensor) and len(x.shape) == 3:
                             # specshow()?
-                            plt.imshow(x.squeeze(0).T.cpu().numpy())
+                            if x.size(-1) == 128:
+                                plt.imshow(x.squeeze(0).T.cpu().numpy())
+                            else:
+                                plt.imshow(x.squeeze(0)[..., :100].cpu().numpy())
                             plt.title(f"mean={x.mean()}, std={x.std()}")
                             plt.show()
                             return str(x.shape)
@@ -516,11 +522,14 @@ class ASRDatabunch:
             num_workers=conf["num_workers"],
             shuffle=conf["shuffle"],
             reverse=conf["ascending"],
+            **conf["dataloader_args"],
         )
         pad_collate_float_args = OrderedDict(
             lang=lang, raw_audio=False, print_stats=PRINT_BATCH_STATS, p_y_rand=0.0,
         )
         after_batch = []
+        shuffle_valid = conf["loss"]["type"] != "contrastive"
+        print("shuffle_valid:", shuffle_valid)
 
         db = grab_asr_databunch(
             builder_train,
@@ -529,6 +538,7 @@ class ASRDatabunch:
             tfms,
             tfms_args,
             sorted_dl_args,
+            shuffle_valid,
             pad_collate_float_args,
             bs_valid=conf["batching"]["batch_size_valid"],
             norm_file=conf["norm_file"],
