@@ -116,3 +116,7 @@ tmp/
 *.tar.gz.bak
 __pycache__
 
+# misc
+data
+ray_results
+nbs

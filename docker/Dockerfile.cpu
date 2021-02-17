@@ -17,5 +17,8 @@ COPY requirements.inference.txt .
 # wrap pip command + reqs
 RUN alias pip3="python3 -m pip" && pip3 install -r requirements.inference.txt
 
+# bug in ray?
+RUN pip3 uninstall -y dataclasses
+
 WORKDIR /workspace
 CMD ["/bin/bash"]

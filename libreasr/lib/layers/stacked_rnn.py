@@ -156,7 +156,11 @@ class StackedRNN(nn.Module):
             # apply rnn
             inp = x
             x, new_state = self.forward_one_rnn(
-                inp, i, state=state, should_use_tmp_state=suts, lengths=lengths,
+                inp,
+                i,
+                state=state,
+                should_use_tmp_state=suts,
+                lengths=lengths,
             )
 
             # apply norm

@@ -64,7 +64,6 @@ def debug(self, inp=None):
 torchaudio.set_audio_backend("sox_io")
 
 
-
 class OpenAudioSpan(Transform):
     def __init__(self, tpls):
         self.tpls = tpls
@@ -142,9 +141,9 @@ class Resample(Transform):
             smpl = torchaudio.transforms.Resample(orig_freq=i.sr, new_freq=self.sr)
             res = smpl(i)
         else:
-            res = torch.from_numpy(
-                resample_poly(i.numpy()[0], self.sr, i.sr)
-            ).float()[None]
+            res = torch.from_numpy(resample_poly(i.numpy()[0], self.sr, i.sr)).float()[
+                None
+            ]
         return AudioTensor(res, self.sr)
 
 
@@ -259,7 +258,11 @@ class StreamPreprocess(Transform):
     order = 15
 
     def __init__(
-        self, sr, win_length=0.025, hop_length=0.01, **kwargs,
+        self,
+        sr,
+        win_length=0.025,
+        hop_length=0.01,
+        **kwargs,
     ):
         self.sr = sr
         self.hop_length = hop_length
@@ -332,7 +335,9 @@ class StreamPostprocess(Transform):
     order = 25
 
     def __init__(
-        self, n_stack, **kwargs,
+        self,
+        n_stack,
+        **kwargs,
     ):
         self.n_stack = n_stack
 
@@ -559,62 +564,6 @@ class AddLen(Transform):
     def encodes(self, o):
         debug(self)
         return (o, len(o))
-
-
-class BatchNormalize(Transform):
-    order = 100
-
-    def __init__(self, norm_file, **kwargs):
-        try:
-            loaded = torch.load(norm_file)
-        except:
-            loaded = (torch.FloatTensor([0.0]), torch.FloatTensor([1.0]))
-            print("unable to load norm_file, falling back to unit mean & std")
-        self.mean = loaded[0]
-        self.std = loaded[1]
-        self.warned = False
-
-    def encodes(self, x) -> None:
-        debug(self)
-        if len(x) == 2 and len(x[0].shape) >= 4:
-            x, y = x
-            try:
-                x = (x - self.mean.to(x.device)) / self.std.to(x.device)
-                # torch.clamp_(x, -10., 10.)
-            except Exception as e:
-                if not self.warned:
-                    print("BatchNormalize size mismatch! rerun statistics...")
-                    print(e)
-                self.warned = True
-                return (x, y)
-            return (x, y)
-        else:
-            return x
-
-
-class FeatureNormalize(Transform):
-    order = 100
-
-    def __init__(self, norm_file, **kwargs):
-        try:
-            loaded = torch.load(norm_file)
-        except:
-            loaded = (torch.FloatTensor([0.0]), torch.FloatTensor([1.0]))
-            print("unable to load norm_file, falling back to unit mean & std")
-        self.mean = loaded[0]
-        self.std = loaded[1]
-        self.warned = False
-
-    def encodes(self, x) -> None:
-        debug(self)
-        try:
-            x = (x - self.mean.to(x.device)) / self.std.to(x.device)
-        except Exception as e:
-            if not self.warned:
-                print("FeatureNormalize size mismatch! rerun statistics...")
-                print(e)
-            self.warned = True
-        return x
 
 
 def update_tfms(l, extra_args):

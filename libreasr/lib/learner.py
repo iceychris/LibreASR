@@ -72,8 +72,8 @@ class HutchinsonTraceCallback(Callback):
 
     def _clip_grad_norm(self, max_norm=0.0, params=None):
         """
-            From FairSeq opimizer - Clips gradient norm.
-            """
+        From FairSeq opimizer - Clips gradient norm.
+        """
         if max_norm > 0:
             return torch.nn.utils.clip_grad_norm_(params, max_norm)
         else:
@@ -86,10 +86,10 @@ class HutchinsonTraceCallback(Callback):
 
     def after_backward(self):
         """
-            compute the Hessian vector product with a random vector v, at the current gradient point,
-            i.e., compute the gradient of <gradsH,v>.
-            :param gradsH: a list of torch variables
-            :return: a list of torch tensors
+        compute the Hessian vector product with a random vector v, at the current gradient point,
+        i.e., compute the gradient of <gradsH,v>.
+        :param gradsH: a list of torch variables
+        :return: a list of torch tensors
         """
 
         # Add hutchinson_trace to optimizer state

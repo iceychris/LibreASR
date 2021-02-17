@@ -15,7 +15,10 @@ def cer(_pred, _true, norm=True):
     norm : bool
         divide by length of ground truth
     """
-    _pred, _true, = _pred.replace(" ", ""), _true.replace(" ", "")
+    _pred, _true, = (
+        _pred.replace(" ", ""),
+        _true.replace(" ", ""),
+    )
     if norm:
         l = len(_true) if len(_true) > 0 else 1
         return float(editdistance.distance(_pred, _true)) / l

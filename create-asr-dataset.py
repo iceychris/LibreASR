@@ -14,6 +14,7 @@ import torchaudio
 # fastai2_audio
 # add flac to supported audio types
 import mimetypes
+
 mimetypes.types_map[".flac"] = "audio/flac"
 
 from fastai2_audio.core.all import get_audio_files
@@ -94,7 +95,10 @@ if __name__ == "__main__":
         help="maximum audio length in milliseconds",
     )
     parser.add_argument(
-        "--lang", default="en", type=str, help="language",
+        "--lang",
+        default="en",
+        type=str,
+        help="language",
     )
     parser.add_argument(
         "--out",
@@ -375,9 +379,9 @@ if __name__ == "__main__":
 
     # final print
     try:
-        print("> xlen (sum ):", df.xlen.values.sum() / 1000. / 3600., "hours")
-        print("> xlen (mean):", df.xlen.values.mean() / 1000., "seconds")
-        print("> xlen (std ):", df.xlen.values.std() / 1000., "seconds")
+        print("> xlen (sum ):", df.xlen.values.sum() / 1000.0 / 3600.0, "hours")
+        print("> xlen (mean):", df.xlen.values.mean() / 1000.0, "seconds")
+        print("> xlen (std ):", df.xlen.values.std() / 1000.0, "seconds")
     except:
         pass
 

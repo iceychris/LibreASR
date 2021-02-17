@@ -1,10 +1,13 @@
 #!/usr/bin/env python
 
+import os
 import time
 import sys
 import queue
 import logging
 import struct
+import yaml
+import json
 from threading import Thread
 from functools import partial
 
@@ -13,8 +16,9 @@ import tornado.web
 import tornado.websocket
 from tornado.ioloop import PeriodicCallback
 
-import interfaces.libreasr_pb2 as ap
-import interfaces.libreasr_pb2_grpc as apg
+import libreasr.api.interfaces.libreasr_pb2 as ap
+import libreasr.api.interfaces.libreasr_pb2_grpc as apg
+from libreasr.lib.inference.utils import load_config
 
 
 DUMP_AUDIO = False
@@ -26,17 +30,17 @@ def log_print(*args, **kwargs):
     print("[api-bridge]", *args, **kwargs)
 
 
-def choose_channel(lang):
-    return {"en": "localhost:50051", "de": "localhost:50052", "fr": "localhost:50053",}[
-        lang
-    ]
+def choose_channel(conf, lang):
+    p = conf["overrides"]["languages"][lang]["grpc_port"]
+    return f"localhost:{p}"
 
 
-def grpc_thread_func(lang, q_recv, q_send):
+def grpc_thread_func(conf, lang, q_recv, q_send):
     # choose channel & connect
-    with grpc.insecure_channel(choose_channel(lang)) as channel:
+    chan = choose_channel(conf, lang)
+    with grpc.insecure_channel(chan) as channel:
         log_print("gRPC connected")
-        stub = apg.ASRStub(channel)
+        stub = apg.LibreASRStub(channel)
 
         def yielder():
             while True:
@@ -53,14 +57,28 @@ def grpc_thread_func(lang, q_recv, q_send):
         log_print("gRPC stopped")
 
 
+class APIHandler(tornado.web.RequestHandler):
+    def initialize(self, conf):
+        self.conf = conf
+        self.langs = conf["overrides"]["languages"]
+
+    def set_default_headers(self):
+        self.set_header("Content-Type", "application/json")
+
+    def get(self):
+        raw = json.dumps(self.langs)
+        self.write(raw)
+
+
 class WebSocket(tornado.websocket.WebSocketHandler):
-    def initialize(self):
+    def initialize(self, conf):
+        self.conf = conf
         self.ready = lambda: False
 
-    def start_grpc_thread(self, lang=None):
+    def start_grpc_thread(self, lang):
         # start grpc thread
         q_recv, q_send = queue.SimpleQueue(), queue.SimpleQueue()
-        t = Thread(target=grpc_thread_func, args=(lang, q_recv, q_send))
+        t = Thread(target=grpc_thread_func, args=(self.conf, lang, q_recv, q_send))
         t.start()
         self.q_recv = q_recv
         self.q_send = q_send
@@ -126,16 +144,38 @@ class WebSocket(tornado.websocket.WebSocketHandler):
 
 if __name__ == "__main__":
 
+    # parse args
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--conf",
+        "--config",
+        default="./config/deploy.yaml",
+        help="Path to LibreASR configuration file",
+    )
+    parser.add_argument(
+        "--web-path",
+        default="./examples/web/build",
+        help="Path to LibreASR web app build directory",
+    )
+    args = parser.parse_args()
+
+    # load config
+    conf = load_config(args.conf, None)
+
     # start websocket server
+    opts = {"conf": conf}
     handlers = [
-        (r"/asupersecretwebsocketpath345", WebSocket, {}),
+        (r"/api", APIHandler, opts),
+        (r"/asupersecretwebsocketpath345", WebSocket, opts),
         (
             r"/(.*)",
             tornado.web.StaticFileHandler,
-            {"path": "./apps/web/build", "default_filename": "index.html"},
+            {"path": args.web_path, "default_filename": "index.html"},
         ),
     ]
     application = tornado.web.Application(handlers, debug=True)
     application.listen(8080)
-    log_print("running on :8080")
+    log_print("running on :8080 in", os.getcwd())
     tornado.ioloop.IOLoop.instance().start()

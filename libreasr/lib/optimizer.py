@@ -82,18 +82,18 @@ def AdaHessian(
 
 class Apollo(Optimizer):
     r"""Implements Atom algorithm.
-        Arguments:
-            params (iterable): iterable of parameters to optimize or dicts defining
-                parameter groups
-            lr (float): learning rate
-            beta (float, optional): coefficient used for computing
-                running averages of gradient (default: 0.9)
-            eps (float, optional): term added to the denominator to improve
-                numerical stability (default: 1e-4)
-            warmup (int, optional): number of warmup steps (default: 0)
-            init_lr (float, optional): initial learning rate for warmup (default: 0.01)
-            wd (float, optional): weight decay coefficient (default: 0)
-        """
+    Arguments:
+        params (iterable): iterable of parameters to optimize or dicts defining
+            parameter groups
+        lr (float): learning rate
+        beta (float, optional): coefficient used for computing
+            running averages of gradient (default: 0.9)
+        eps (float, optional): term added to the denominator to improve
+            numerical stability (default: 1e-4)
+        warmup (int, optional): number of warmup steps (default: 0)
+        init_lr (float, optional): initial learning rate for warmup (default: 0.01)
+        wd (float, optional): weight decay coefficient (default: 0)
+    """
 
     def __init__(self, params, lr, beta=0.9, eps=1e-4, warmup=100, init_lr=0.01, wd=0):
         if not 0.0 < lr:

@@ -33,12 +33,12 @@ import pandas as pd
 import numpy as np
 
 from libreasr.lib.utils import *
-from libreasr.lib.transforms import update_tfms, update_tfms_multi, BatchNormalize
+from libreasr.lib.transforms import update_tfms, update_tfms_multi
 
 
 # x: maximum batch capacity
 #  n stacked frames
-X_MAX = 8 * 7000 # 9000  # 6000 # 6500 # 7750
+X_MAX = 8 * 7000  # 9000  # 6000 # 6500 # 7750
 
 # y: maximum batch capacity
 #  n BPE tokens
@@ -66,7 +66,13 @@ HOME = "/home/chris"
 @delegates(TfmdDL)
 class SortishDL(TfmdDL):
     def __init__(
-        self, dataset, tpls, sort_func=None, res=None, reverse=True, **kwargs,
+        self,
+        dataset,
+        tpls,
+        sort_func=None,
+        res=None,
+        reverse=True,
+        **kwargs,
     ):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
@@ -110,7 +116,16 @@ class SortishDL(TfmdDL):
 
 @delegates(TfmdDL)
 class DynamicBucketingDL(TfmdDL):
-    def __init__(self, dataset, tpls, sort_func=None, res=None, reverse=True, mul_bs=1., **kwargs):
+    def __init__(
+        self,
+        dataset,
+        tpls,
+        sort_func=None,
+        res=None,
+        reverse=True,
+        mul_bs=1.0,
+        **kwargs,
+    ):
         super().__init__(dataset, **kwargs)
         self.sort_func = _default_sort if sort_func is None else sort_func
         self.res = (
@@ -315,7 +330,6 @@ def grab_asr_databunch(
     bs_valid=8,
     after_batch=[],
     splitter=partial(RandomSplitter, seed=42),
-    norm_file=None,
     name="unknown_asr_dataset",
 ) -> DataLoaders:
 
@@ -333,8 +347,14 @@ def grab_asr_databunch(
     # and create them later
     extra_train = OrderedDict(tfms_args, tpls=tpls_train)
     extra_valid = OrderedDict(tfms_args, tpls=tpls_valid)
-    extra_train = OrderedDict(extra_train, random=True,)
-    extra_valid = OrderedDict(extra_valid, random=False,)
+    extra_train = OrderedDict(
+        extra_train,
+        random=True,
+    )
+    extra_valid = OrderedDict(
+        extra_valid,
+        random=False,
+    )
 
     # update MySortedDL args
     sorted_dl_args.update(
@@ -422,7 +442,7 @@ def grab_asr_databunch(
             else:
                 only = [only]
         if benchmark:
-            times = {q.__class__.__name__: 0. for q in aud_pipe} 
+            times = {q.__class__.__name__: 0.0 for q in aud_pipe}
         for i in range(n):
             label = lbl_pipe[0](i)
             if not benchmark:
@@ -446,7 +466,6 @@ def grab_asr_databunch(
                     else:
                         s = f"After step #{j} ({aud_step.__class__}):"
                         print(s)
-                    
 
                     from librosa.display import specshow
 
@@ -508,7 +527,6 @@ class ASRDatabunch:
             n_foward_frames=conf["n_forward_frames"],
             mfcc_args=conf["mfcc_args"],
             melkwargs=conf["melkwargs"],
-            norm_file=conf["norm_file"],
             use_extra_features=False,
         )
         sorted_dl_args = OrderedDict(
@@ -518,7 +536,10 @@ class ASRDatabunch:
             reverse=conf["ascending"],
         )
         pad_collate_float_args = OrderedDict(
-            lang=lang, raw_audio=False, print_stats=PRINT_BATCH_STATS, p_y_rand=0.0,
+            lang=lang,
+            raw_audio=False,
+            print_stats=PRINT_BATCH_STATS,
+            p_y_rand=0.0,
         )
         after_batch = []
 
@@ -531,7 +552,6 @@ class ASRDatabunch:
             sorted_dl_args,
             pad_collate_float_args,
             bs_valid=conf["batching"]["batch_size_valid"],
-            norm_file=conf["norm_file"],
             after_batch=after_batch,
         )
         return db

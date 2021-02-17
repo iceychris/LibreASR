@@ -19,7 +19,8 @@ from IPython.core.debugger import set_trace
 from libreasr.lib.utils import *
 from libreasr.lib.layers import StackedRNN
 from libreasr.lib.layers.conformer import ConformerBlock
-from libreasr.lib.lm import LMFuser
+from libreasr.lib.lm import LMFuser, LMFuserBatch
+from libreasr.lib.defaults import LM_ALPHA, LM_TEMP, MODEL_TEMP
 
 
 class ResidualAdapter(Module):
@@ -123,6 +124,7 @@ class Predictor(Module):
         layer_norm=False,
         rnn_type="NBRC",
         use_tmp_state_pcent=0.9,
+        **kwargs,
     ):
         self.vocab_sz = vocab_sz
         self.num_layers = num_layers
@@ -167,13 +169,23 @@ class Joint(Module):
         else:
             raise Exception("No such joint_method")
         self.joint = nn.Sequential(
-            nn.Linear(input_sz, joint_sz), nn.Tanh(), nn.Linear(joint_sz, vocab_sz),
+            nn.Linear(input_sz, joint_sz),
+            nn.Tanh(),
+            nn.Linear(joint_sz, vocab_sz),
         )
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
-    def forward(self, h_pred, h_enc, softmax=True, normalize_grad=False):
+    def forward(
+        self,
+        h_pred,
+        h_enc,
+        temp=MODEL_TEMP,
+        softmax=True,
+        log=True,
+        normalize_grad=False,
+    ):
         # https://arxiv.org/pdf/2011.01576.pdf
         if normalize_grad:
             h_pred.register_hook(lambda grad: grad / h_enc.size(1))
@@ -187,12 +199,15 @@ class Joint(Module):
         # x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 3, x)
         x = self.joint(x)
         if softmax:
-            x = F.log_softmax(x, dim=-1)
+            f = F.softmax
+            if log:
+                f = F.log_softmax
+            x = f(x / temp, dim=-1)
         return x
 
 
 def get_model(conf, *args, **kwargs):
-    if conf["training"]["noisystudent"]:
+    if conf.get("training", {}).get("noisystudent", False):
         teacher = eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
         ns = NoisyStudent(teacher, Transducer.from_config(conf, *args, **kwargs))
         return ns
@@ -220,11 +235,15 @@ class Transducer(Module):
         use_tmp_bos_pcent=0.99,
         encoder_kwargs={},
         predictor_kwargs={},
-        joint=True
+        joint=True,
+        device="cpu",
         **kwargs,
     ):
         self.encoder = eval(encoder_kwargs["name"])(
-            feature_sz, hidden_sz=hidden_sz, out_sz=out_sz, **encoder_kwargs,
+            feature_sz,
+            hidden_sz=hidden_sz,
+            out_sz=out_sz,
+            **encoder_kwargs,
         )
         self.predictor = eval(predictor_kwargs["name"])(
             vocab_sz,
@@ -245,6 +264,7 @@ class Transducer(Module):
         self.use_tmp_bos_pcent = use_tmp_bos_pcent
         self.vocab_sz = vocab_sz
         self.hidden_sz = hidden_sz
+        self.device = device
         self.lm = None
 
     @staticmethod
@@ -270,8 +290,9 @@ class Transducer(Module):
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
             joint=conf["model"]["joint"]["enable"],
+            device=conf["cuda"]["device"],
         ).to(conf["cuda"]["device"])
-        m.mp = conf["mp"]
+        m.mp = conf.get("mp", False)
         return m
 
     def param_groups(self):
@@ -281,7 +302,7 @@ class Transducer(Module):
             self.joint.param_groups(),
         ]
 
-    def post_quantize(self):
+    def quantization_fix(self):
         self.__class__ = QuantizedTransducer
 
     def grab_bos(self, y, yl, bs, device):
@@ -345,23 +366,37 @@ class Transducer(Module):
         # print(encoder_out.shape, predictor_out.shape)
 
         # joint & project
-        joint_out = self.joint(predictor_out, encoder_out, softmax=softmax)
+        joint_out = self.joint(predictor_out, encoder_out, softmax=softmax, log=True)
 
         return joint_out
 
-    def transcribe_batch(self, tpl, max_iters=3, lm=False):
+    def transcribe_batch(
+        self,
+        tpl,
+        max_iters=3,
+        alpha=LM_ALPHA,
+        temp_lm=LM_TEMP,
+        temp_model=MODEL_TEMP,
+        enc_rb_sz=0,
+        enc_rb_trim=0,
+        pre_rb_sz=0,
+        pre_rb_trim=0,
+    ):
 
         # unpack
-        if (isinstance(tpl, tuple) or isinstance(tpl, list)) and len(tpl) == 4:
-            x, _, _, _ = tpl
+        if isinstance(tpl, tuple) or isinstance(tpl, list):
+            if len(tpl) == 4:
+                x, _, xl, _ = tpl
+            else:
+                x, xl = tpl
         else:
-            x = tpl
+            x, xl = tpl, None
         if self.mp:
             x = x.half()
 
         # encoder
         x = x.reshape(x.size(0), x.size(1), -1)
-        encoder_out = self.encoder(x)
+        encoder_out = self.encoder(x, lengths=xl)
 
         # N: batch size
         # T: n frames (time)
@@ -372,7 +407,7 @@ class Transducer(Module):
         V = self.vocab_sz
         dtype, device = x.dtype, x.device
 
-        # frist
+        # first
         pred_input = torch.zeros((N, 1), device=device).long()
         pred_input.fill_(self.bos)
         pred_output, pred_state = self.predictor(pred_input)
@@ -380,7 +415,9 @@ class Transducer(Module):
         # prepare vars
         outs = []
         predictions = []
-        strs = []
+
+        # lm
+        fuser = LMFuserBatch(self.lm)
 
         # check if sth is None
         def ok(a):
@@ -392,9 +429,9 @@ class Transducer(Module):
         def eq(a, b):
             if a is None or b is None:
                 return False
-            if isinstance(a, list):
-                return all([(x == y).all() for x, y in zip(a, b)])
-            return (a == b).all()
+            if isinstance(a, (list, tuple)):
+                return all([eq(x, y) for x, y in zip(a, b)])
+            return (a == b).all().item()
 
         # memoize joint
         mp, me = None, None
@@ -404,8 +441,11 @@ class Transducer(Module):
             nonlocal mp, me, rj
             if ok([mp, me]) and ok(rj) and eq(mp, p) and eq(me, e):
                 return rj, False
-            rj = self.joint(p, e)
-            mp, me, = p, e
+            rj = self.joint(p, e, temp=temp_model, softmax=True, log=False)
+            mp, me, = (
+                p,
+                e,
+            )
             return rj, True
 
         # memoize predictor
@@ -414,7 +454,9 @@ class Transducer(Module):
 
         def memo_predictor(po, ps):
             nonlocal mpo, mps, rpo, rps
-            if ok([mpo, mps, rpo, rps]) and eq(mpo, po) and eq(mps, ps):
+            match_inp = eq(mpo, po)
+            match_state = eq(mps, ps)
+            if ok([mpo, mps, rpo, rps]) and match_inp and match_state:
                 return rpo, rps, False
             rpo, rps = self.predictor(po, state=ps)
             mpo, mps = po, ps
@@ -437,27 +479,33 @@ class Transducer(Module):
                 )
 
                 # decode one character
+                #  (rnnt-only)
                 prob, pred = joint_out.max(-1)
+
+                # check for blanks
+                #  (bail if all blank)
+                pred_is_blank = pred == self.blank
+                if pred_is_blank.all():
+                    break
+
+                # apply/fuse lm
+                _, prob, pred = fuser.fuse(joint_out, prob, pred, alpha=alpha)
 
                 # set as next input
                 pred_input = pred[:, :, 0]
 
-                # bail if all blank
-                if (pred == self.blank).all():
-                    break
-
                 # advance predictor (output & state)
                 # issue: only advance predictor state
                 #        when a non-blank has been decoded
-                #        (use gather and where)...
+                #        (use torch.where)...
                 new_pred_output, new_pred_state, changed = memo_predictor(
                     pred_input, pred_state
                 )
 
                 if changed:
-                    # select non-blanks for output & state
+                    # update non-blanks for output & state
                     pred_output = torch.where(
-                        pred == self.blank, pred_output, new_pred_output
+                        pred_is_blank, pred_output, new_pred_output
                     )
                     qpred = pred[None, :, 0]
                     listify(pred_state, cls=list)
@@ -468,10 +516,23 @@ class Transducer(Module):
                             )
                     listify(pred_state, cls=tuple)
 
+                    # advance lm
+                    fuser.advance(
+                        pred[:, :, 0], keep_mask=pred == self.blank, temp=temp_lm
+                    )
+
+                # cap at xl
+                if xl is not None:
+                    pred[t >= xl] = self.blank
+
                 # store prediction
                 predictions.append(pred[:, 0, 0])
 
+        # reset lm
+        fuser.reset()
+
         # denumericalize
+        strs = []
         predictions = torch.stack(predictions, dim=1)
         for p in predictions:
             s = self.lang.denumericalize(p.cpu().numpy().tolist())
@@ -486,7 +547,18 @@ class Transducer(Module):
         res, _, metrics, _ = self.decode_greedy(*args, **kwargs)
         return res, metrics
 
-    def decode_greedy(self, x, max_iters=3, alpha=0.005, theta=1.0):
+    def decode_greedy(
+        self,
+        x,
+        max_iters=3,
+        alpha=LM_ALPHA,
+        temp_lm=LM_TEMP,
+        temp_model=MODEL_TEMP,
+        enc_rb_sz=0,
+        enc_rb_trim=0,
+        pre_rb_sz=0,
+        pre_rb_trim=0,
+    ):
         "x must be of shape [C, T, H]"
 
         # keep stats
@@ -519,7 +591,7 @@ class Transducer(Module):
 
         # iterate through all timesteps
         y_seq, log_p = [], 0.0
-        for h_t_enc in encoder_out:
+        for t, h_t_enc in enumerate(encoder_out):
 
             iters = 0
             while iters < max_iters:
@@ -529,7 +601,9 @@ class Transducer(Module):
                 # go through the joint network
                 _h_t_pred = h_t_pred[None]
                 _h_t_enc = h_t_enc[None, None, None]
-                joint_out = self.joint(_h_t_pred, _h_t_enc)
+                joint_out = self.joint(
+                    _h_t_pred, _h_t_enc, temp=temp_model, softmax=True, log=False
+                )
 
                 # decode one character
                 extra["outs"].append(joint_out.clone())
@@ -544,7 +618,7 @@ class Transducer(Module):
                     break
                 else:
                     # fuse with lm
-                    joint_out, prob, pred = fuser.fuse(joint_out, prob, pred)
+                    _, prob, pred = fuser.fuse(joint_out, prob, pred, alpha=alpha)
 
                     # print(iters)
                     y_seq.append(pred)
@@ -554,7 +628,7 @@ class Transducer(Module):
                     h_t_pred, pred_state = self.predictor(y_one_char, state=pred_state)
 
                     # advance lm
-                    fuser.advance(y_one_char)
+                    fuser.advance(y_one_char, temp=temp_lm)
 
             # record how many iters we had
             extra["iters"].append(iters)
@@ -572,7 +646,17 @@ class Transducer(Module):
         return self.lang.denumericalize(y_seq), -log_p, metrics, extra
 
     def transcribe_stream(
-        self, stream, denumericalizer, max_iters=10, alpha=0.3, theta=1.0
+        self,
+        stream,
+        denumericalizer,
+        max_iters=10,
+        alpha=LM_ALPHA,
+        temp_lm=LM_TEMP,
+        temp_model=MODEL_TEMP,
+        enc_rb_sz=0,
+        enc_rb_trim=0,
+        pre_rb_sz=0,
+        pre_rb_trim=0,
     ):
         """
         stream is expected to yield chunks of shape (NCHANS, CHUNKSIZE)
@@ -584,15 +668,43 @@ class Transducer(Module):
         encoder_state = None
         predictor_state = None
 
-        # current token
-        y_one_char = torch.LongTensor([[self.bos]])
+        # variables
+        dev = torch.device(self.device)
+        y_first = torch.LongTensor([[self.bos]]).to(dev)
+        y_one_char = torch.LongTensor([[self.bos]]).to(dev)
         h_t_pred = None
 
-        # sequence of the hole stream
+        # sequence of the whole stream
         y = []
 
         # lm
         fuser = LMFuser(self.lm)
+
+        # functions
+        etrb = TensorRingBuffer(enc_rb_sz, (1, 0, 1280), dim=1, device=dev)
+
+        def enc(x, state, return_state):
+            if etrb.append(x):
+                x = etrb.get()
+                r, s = self.encoder(x, return_state=return_state)
+                if enc_rb_trim > 0:
+                    etrb.trim_to(enc_rb_trim)
+                r = r[:, -1:]
+                return r, s
+            return self.encoder(x, state=state, return_state=return_state)
+
+        ptrb = TensorRingBuffer(pre_rb_sz, (1, 0), dim=1, device=dev, dtype=torch.int64)
+
+        def pre(x, state):
+            if ptrb.append(x):
+                x = ptrb.get()
+                x = torch.cat([y_first, x], dim=1)
+                r, s = self.predictor(x)
+                r = r[:, -1:]
+                if pre_rb_trim > 0:
+                    ptrb.trim_to(pre_rb_trim)
+                return r, s
+            return self.predictor(x, state=state)
 
         def reset_encoder():
             nonlocal encoder_state
@@ -602,19 +714,23 @@ class Transducer(Module):
             nonlocal y_one_char, h_t_pred, predictor_state
             # initialize predictor
             #  blank goes first
-            y_one_char = torch.LongTensor([[self.bos]])
-            h_t_pred, predictor_state = self.predictor(y_one_char)
+            y_one_char = torch.LongTensor([[self.bos]]).to(dev)
+            h_t_pred, predictor_state = self.predictor(y_one_char, None)
 
         def reset_lm():
             fuser.reset()
 
         def reset():
-            reset_encoder()
-            reset_predictor()
+            # only reset lm periodically
+            #  if using ring buffers
+            # reset_encoder()
+            # reset_predictor()
             reset_lm()
+            pass
 
         # reset at start
-        reset()
+        # reset()
+        reset_predictor()
 
         # iterate through time
         # T > 1 is possible
@@ -627,15 +743,10 @@ class Transducer(Module):
                 continue
 
             # -> [1, T, H, W]
-            chunk = chunk[None]
+            chunk = chunk.to(dev)[None, ..., 0]
 
             # forward pass encoder
-            if encoder_state is None:
-                encoder_out, encoder_state = self.encoder(chunk, return_state=True)
-            else:
-                encoder_out, encoder_state = self.encoder(
-                    chunk, state=encoder_state, return_state=True
-                )
+            encoder_out, encoder_state = enc(chunk, encoder_state, return_state=True)
             h_t_enc = encoder_out[0]
 
             # loop over encoder states (t)
@@ -653,7 +764,9 @@ class Transducer(Module):
                     _h_t_enc = h_enc[None, None, None]
                     # print(_h_t_pred.shape)
                     # print(_h_t_enc.shape)
-                    joint_out = self.joint(_h_t_pred, _h_t_enc)
+                    joint_out = self.joint(
+                        _h_t_pred, _h_t_enc, temp=temp_model, softmax=True, log=False
+                    )
 
                     # decode one character
                     prob, pred = joint_out.max(-1)
@@ -667,18 +780,18 @@ class Transducer(Module):
                         break
                     else:
                         # fuse with lm
-                        joint_out, prob, pred = fuser.fuse(joint_out, prob, pred)
+                        joint_out, prob, pred = fuser.fuse(
+                            joint_out, prob, pred, alpha=alpha
+                        )
 
                         y_seq.append(pred)
                         y_one_char[0][0] = pred
 
                         # advance predictor
-                        h_t_pred, predictor_state = self.predictor(
-                            y_one_char, state=predictor_state
-                        )
+                        h_t_pred, predictor_state = pre(y_one_char, predictor_state)
 
                         # advance lm
-                        fuser.advance(y_one_char)
+                        fuser.advance(y_one_char, temp=temp_lm)
 
                         nonblanks += 1
 
@@ -722,37 +835,27 @@ class NoisyStudent(Module):
         return self.student.transcribe(*args, **kwargs)
 
 
-def try_eval(m):
-    for c in m.children():
-        if isinstance(c, torch.nn.quantized.modules.linear.LinearPackedParams):
-            continue
-        try:
-            c.eval()
-        except:
-            pass
-        try_eval(c)
-
-
 class QuantizedTransducer(Transducer):
     def eval(self):
-        try_eval(self)
+        self.train(False)
         return self
 
-    def train(self):
+    def train(self, _):
+        try_eval(self)
         return self
 
     def to(self, _):
         return self
 
 
-def masked_mean(t, mask, dim = 1, random=False):
+def masked_mean(t, mask, dim=1, random=False):
     if random:
         r = torch.zeros(t.size(dim), dtype=t.dtype, device=t.device).uniform_() > 0.5
         r[0] = 1
         r = r.expand(mask.shape)
         mask = mask & r
-    t = t.masked_fill(~mask[:, :, None], 0.)
-    return t.sum(dim = 1) / mask.sum(dim = 1)[..., None]
+    t = t.masked_fill(~mask[:, :, None], 0.0)
+    return t.sum(dim=1) / mask.sum(dim=1)[..., None]
 
 
 class ContrastiveTransducer(Transducer):
@@ -760,7 +863,7 @@ class ContrastiveTransducer(Transducer):
         a, b = hidden_sz, hidden_sz
         self.e_latent = nn.Linear(a, b, bias=False)
         self.p_latent = nn.Linear(a, b, bias=False)
-        self.temperature = nn.Parameter(torch.tensor(1.))
+        self.temperature = nn.Parameter(torch.tensor(1.0))
         super().__init__(*args, **kwargs)
 
     @staticmethod
@@ -820,20 +923,20 @@ class ContrastiveTransducer(Transducer):
         pmask = torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
 
         # reduce
-        e = masked_mean(encoder_out, emask, dim=1)   #, random=self.training)
-        p = masked_mean(predictor_out, pmask, dim=1) #, random=self.training)
+        e = masked_mean(encoder_out, emask, dim=1)  # , random=self.training)
+        p = masked_mean(predictor_out, pmask, dim=1)  # , random=self.training)
 
         # project
         e = self.e_latent(e)
         p = self.p_latent(p)
 
         # normalize
-        e, p = map(lambda t: F.normalize(t, p = 2, dim = -1), (e, p))
+        e, p = map(lambda t: F.normalize(t, p=2, dim=-1), (e, p))
 
         # loss
         temp = self.temperature.exp()
-        sim = einsum('i d, j d -> i j', e, p) * temp
-        labels = torch.arange(N, device = x.device)
+        sim = einsum("i d, j d -> i j", e, p) * temp
+        labels = torch.arange(N, device=x.device)
         if return_logits:
             return e, p, sim, labels
         return sim, labels
@@ -880,15 +983,15 @@ class ConformerEncoder(Module):
         self.input_norm = nn.LayerNorm(feature_sz)
         self.proj = nn.Linear(feature_sz, hidden_sz)
         self.conformer = ConformerBlock(
-            dim = hidden_sz,
-            dim_head = 64,
-            heads = 8,
-            ff_mult = 4,
-            conv_expansion_factor = 2,
-            conv_kernel_size = 31,
-            attn_dropout = 0.,
-            ff_dropout = 0.,
-            conv_dropout = 0.
+            dim=hidden_sz,
+            dim_head=64,
+            heads=8,
+            ff_mult=4,
+            conv_expansion_factor=2,
+            conv_kernel_size=31,
+            attn_dropout=0.0,
+            ff_dropout=0.0,
+            conv_dropout=0.0,
         )
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
@@ -928,17 +1031,14 @@ class TransformerPredictor(Module):
         self.vocab_sz = vocab_sz
         self.num_layers = num_layers
         from x_transformers import TransformerWrapper, Encoder
+
         self.transformer = model = TransformerWrapper(
-            num_tokens = vocab_sz,
-            max_seq_len = 1024,
-            attn_layers = Encoder(
-                dim = hidden_sz,
-                depth = 4, # 12
-                heads = 8
-            )
-        ) 
+            num_tokens=vocab_sz,
+            max_seq_len=1024,
+            attn_layers=Encoder(dim=hidden_sz, depth=4, heads=8),  # 12
+        )
         self.drop = nn.Dropout(dropout)
-        self.linear = nn.Linear(hidden_sz*2, hidden_sz)
+        self.linear = nn.Linear(hidden_sz * 2, hidden_sz)
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]

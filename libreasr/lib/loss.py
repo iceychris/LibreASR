@@ -72,8 +72,10 @@ def get_loss_func(
             loss_func_ns = nn.KLDivLoss(log_target=True, reduction="none")
 
     elif loss_type == "contrastive":
+
         def l(a, *args, reduction="mean"):
             return F.cross_entropy(*a, reduction=reduction)
+
         loss_func = l
         return l
 
@@ -124,10 +126,13 @@ def get_loss_func(
 
             # weighted loss
             loss_rnnt = loss * (1.0 - alpha)
-            loss_ns = loss_func_ns(
-                F.log_softmax(inp / T, dim=-1),
-                F.log_softmax(teacher_logits / T, dim=-1),
-            ) * (alpha * T * T)
+            loss_ns = (
+                loss_func_ns(
+                    F.log_softmax(inp / T, dim=-1),
+                    F.log_softmax(teacher_logits / T, dim=-1),
+                )
+                * (alpha * T * T)
+            )
             loss_ns = loss_ns.mean((1, 2, 3)) * 20000.0 * 5
 
             # print(f"RNN-T: {loss_rnnt.mean():.2f}, NS: {loss_ns.mean():.2f}")

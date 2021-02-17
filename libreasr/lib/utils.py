@@ -45,15 +45,18 @@ def check(t):
         raise Exception(f"check failed: {error}! Use %pdb to debug.")
 
 
-def what(q):
+def what(o):
     "this can't handle generators :("
-    o = q
     if isinstance(o, torch.Tensor) or isinstance(o, np.ndarray):
-        return str(o.shape)
-    elif isinstance(o, tuple) or isinstance(o, list):
-        return str([what(x) for x in o])
+        return "<shp=" + str(list(o.shape)) + ", type=" + str(o.dtype) + ">"
+    elif isinstance(o, tuple):
+        return str("(" + ", ".join([what(x) for x in o]) + ")")
+    elif isinstance(o, list):
+        return str("[" + ", ".join([what(x) for x in o]) + "]")
+    elif o is None:
+        return "None"
     else:
-        return str(type(o) + ", " + repr(o))
+        return str(str(type(o)) + ", " + repr(o))
 
 
 def chained_try(funcs, item, try_all=True, post=lambda x: ",".join(x)):
@@ -143,7 +146,16 @@ def wrap_transform(f, ignore="all"):
 
 
 def tensorize(x):
-    arr = np.frombuffer(x, dtype=np.float32)
+    # torch already
+    if torch.is_tensor(x):
+        return x.float()
+
+    # some kind of numpy bytes
+    arr = x
+    if hasattr(x, "data") and isinstance(x.data, (bytes, bytearray)):
+        arr = np.frombuffer(x.data, dtype=np.float32)
+
+    # np array
     # copy to avoid warning
     arr = np.copy(arr)
     return torch.FloatTensor(arr)[None]
@@ -158,6 +170,18 @@ def cudaize(x):
 def standardize(t, eps=1e-5):
     t.add_(-t.mean())
     t.div_(t.std() + eps)
+
+
+def try_eval(m):
+    m.training = False
+    for c in m.children():
+        if isinstance(c, torch.nn.quantized.modules.linear.LinearPackedParams):
+            continue
+        try:
+            c.training = False
+        except:
+            pass
+        try_eval(c)
 
 
 def sanitize_str(o):
@@ -188,6 +212,33 @@ def sanitize_str(o):
     # add space at beginning (for BPE)
     o = " " + o
     return o
+
+
+class TensorRingBuffer:
+    def __init__(
+        self, max_size, shape, dim=1, device=torch.device("cpu"), dtype=torch.float32
+    ):
+        self.max_size = max_size
+        self.shp = shape
+        self.dim = dim
+        self.device = device
+        self.dtype = dtype
+        self.clear()
+
+    def append(self, x):
+        if self.max_size == 0:
+            return False
+        self.tensor = torch.cat([self.tensor, x], dim=self.dim)[:, -self.max_size :]
+        return self.tensor.size(self.dim) == self.max_size
+
+    def get(self):
+        return self.tensor
+
+    def trim_to(self, n):
+        self.tensor = self.tensor[:, -n:]
+
+    def clear(self):
+        self.tensor = torch.zeros(self.shp, device=self.device, dtype=self.dtype)
 
 
 # /data/stt/data/yt/es/o4Eu7FtENbk.wav,1270,6910,y el fin de magris ganis es el portavoz,39,16000,False

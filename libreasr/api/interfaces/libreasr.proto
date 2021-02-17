@@ -1,15 +1,15 @@
 syntax = "proto3";
 
-package ASR;
+package LibreASR;
 
-service ASR {
+service LibreASR {
   rpc Transcribe(Audio) returns (Transcript) {}
   rpc TranscribeStream(stream Audio) returns (stream Transcript) {}
 }
 
 message Audio {
   bytes data = 1;
-  int32 sr = 3;
+  int32 sr = 2;
 }
 
 message Transcript {

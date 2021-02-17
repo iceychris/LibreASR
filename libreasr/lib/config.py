@@ -83,10 +83,20 @@ def check_vocab_sz(conf):
 
 def check_db(db):
     tpl = db.one_batch()
+    print(tpl)
     X, Ym, _, _ = tpl[0]
     Y, Y_lens, X_lens = tpl[1]
     what(X), what(X_lens), what(Y), what(Y_lens)
     assert X_lens.size(0) == Y_lens.size(0)
+
+
+def apply_overrides(conf, config_paths):
+    for cp in config_paths:
+        p = conf
+        for one in cp:
+            p = p[one]
+        update(conf, p)
+    return conf
 
 
 def parse_and_apply_config(*args, inference=False, **kwargs):
@@ -97,13 +107,12 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     # override config for inference + language
     overrides = []
     if inference:
-        overrides.append("inference")
+        overrides.append(["overrides", "inference"])
     lang = kwargs.get("lang", "")
     lang_name = lang
     if len(lang) > 0:
-        overrides.append(lang)
-    for override in overrides:
-        update(conf, conf["overrides"][override])
+        overrides.append(["overrides", "languages", lang])
+    conf = apply_overrides(conf, overrides)
 
     # torch-specific cuda settings
     apply_cuda_stuff(conf)
@@ -115,6 +124,10 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         # grab builder
         builder_train = ASRDatabunchBuilder.from_config(conf, mode="train")
         builder_valid = ASRDatabunchBuilder.from_config(conf, mode="valid")
+
+    # quantization settings
+    if inference:
+        torch.backends.quantized.engine = conf["quantization"]["engine"]
 
     # grab language + sanity check
     try:
@@ -130,30 +143,56 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     if not inference:
         # grab databunch + sanity check
         db = ASRDatabunch.from_config(conf, lang, builder_train, builder_valid, tfms)
-        check_db(db)
+        # check_db(db)
+
+    # grab params
+    model_qpre = conf["quantization"]["model"].get("pre", False)
+    model_qpost = conf["quantization"]["model"].get("post", False)
+    model_path_to_load = "q" if model_qpre else "n"
+    model_path = conf.get("model", {}).get("path", {}).get(model_path_to_load, "")
+    model_args = (model_qpre, model_qpost, model_path)
+    model_do_load = conf["model"].get("load", False)
+    lm_qpre = conf["quantization"]["lm"].get("pre", False)
+    lm_qpost = conf["quantization"]["lm"].get("post", False)
+    lm_path_to_load = "q" if lm_qpre else "n"
+    lm_path = conf.get("lm", {}).get("path", {}).get(lm_path_to_load, "")
+    lm_args = (lm_qpre, lm_qpost, lm_path)
+    lm_enable = conf["lm"].get("enable", False)
 
     # load lm
     lm = None
-    if inference and conf["lm"]["enable"]:
+    dev = conf["cuda"]["device"]
+    if lm_enable:
         try:
-            lm = load_lm(conf, lang_name)
-            print("[LM] loaded.")
-        except:
-            print("[LM] Failed to load.")
+            lm = load_lm(
+                conf.get("lm", {}),
+                *lm_args,
+                load=conf["lm"].get("load", False),
+                device=dev,
+            )
+        except Exception as e:
+            print("[lm] Failed to load")
+            print(e)
 
     # grab model instance
     m = get_model(conf, lang)
 
-    if inference:
+    if model_do_load:
         # load weights
         from libreasr.lib.model_utils import load_asr_model
 
-        load_asr_model(
-            m, lang_name, lang, conf["model"]["path"], conf["cuda"]["device"], lm=lm
+        m = load_asr_model(
+            m,
+            lang_name,
+            lang,
+            *model_args,
+            conf["cuda"]["device"],
+            lm=lm,
         )
         m.lm = lm
         m.lang = lang
 
+    if inference:
         # eval mode
         m.eval()
 

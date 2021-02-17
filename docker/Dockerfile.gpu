@@ -1,1 +1,33 @@
-FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
+FROM iceychris/pytorch:v1.6.0-devel
+
+# base & audio stuff
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    git gcc g++ sox libsox-dev libsox-fmt-all vim make \
+    python3-dev portaudio19-dev alsa-utils
+
+# python basics
+RUN python3 -m pip install packaging wheel setuptools Cython
+
+# reqs
+SHELL ["/bin/bash", "-c"]
+RUN echo $'torch \n\
+    torchvision' > /workspace/constraints.txt
+COPY requirements.training.txt .
+
+# wrap pip command + reqs
+RUN pip3 install -r requirements.training.txt -c constraints.txt
+
+# build & install torchaudio from source
+RUN pip3 uninstall -y torchaudio && \
+    git clone https://github.com/pytorch/audio && \
+    cd audio && git checkout v0.6.0 && \
+    python3 setup.py install
+
+# check everything is fine
+COPY check.py .
+RUN python3 check.py
+
+# switch workdir
+WORKDIR /workspace
+CMD ["/bin/bash"]

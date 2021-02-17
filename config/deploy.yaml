@@ -1,0 +1,347 @@
+# set the used language
+#  "multi" for multilingual
+lang: de
+
+# datasets
+dataset_paths: 
+    tf-speech: "/data/stt/data/tf-speech-recognition/train"
+    tatoeba-en: "/data/stt/data/tatoeba/en"
+    librispeech-0: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-100"
+    librispeech-1: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-360"
+    librispeech-2: "/data/stt/data/librispeech/audio/LibriSpeech/train-other-500"
+    common-voice-en: "/data/stt/data/common-voice/en"
+    common-voice-de: "/data/stt/data/common-voice/de"
+    common-voice-fr: "/data/stt/data/common-voice/fr"
+    common-voice-es: "/data/stt/data/common-voice/es"
+    yt-en: "/data/stt/data/yt/en"
+    yt-de: "/data/stt/data/yt/de"
+    yt-fr: "/data/stt/data/yt/fr"
+    yt-es: "/data/stt/data/yt/es"
+    ls: "/workspace/data/LibriSpeech"
+
+# selected datasets
+datasets:
+  en:
+    train:
+      - common-voice-en
+      - yt-en
+    valid:
+      # - common-voice-en
+      - yt-en
+  de:
+    train:
+      - common-voice-de
+      - yt-de
+    valid:
+      - common-voice-de
+      # - yt-de
+  fr:
+    train:
+      - common-voice-fr
+      - yt-fr
+    valid:
+      - common-voice-fr
+      # - yt-fr
+  es:
+    train:
+      - common-voice-es
+      - yt-es
+    valid:
+      - common-voice-es
+      # - yt-es
+
+# percentage of each individual dataframe used
+#  (stage: builder)
+pcent:
+    train: 0.001 # 1.0
+    valid: 1.0
+    test: 1.0
+
+
+###
+# audio & spectrogram
+###
+
+sr: 16000
+channels: 1
+mfcc: True
+mfcc_args: {}
+melkwargs:
+  n_fft: 1024
+  n_mels: 128
+
+# seconds
+win_length: 0.025
+hop_length: 0.01
+
+# N frames
+delta_win_length: 3
+deltas: 0
+
+# concat N future frames
+n_forward_frames: 0
+
+
+###
+# data limits
+###
+
+# apply the following limits
+# at the builder stage?
+apply_limits: True
+
+# audio length [seconds]
+almins: 20.0
+almaxs: 80.0 # 20.0 # 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+
+# label length [characters]
+y_min: 1
+y_max: 15000 # 350 # 180 # 120 # 80 # 130 # 80 # 60 # 100
+y_max_words: 100
+
+# which dataset to use
+suffix: "cat-stream" # "cat-longy" # "cat-mix" # cat-4
+
+
+###
+# GPU options
+###
+
+cuda:
+  enable: true
+
+  # use cudnn benchmark for better runtime perf
+  benchmark: false
+
+  # set default cuda device (to avoid errors?)
+  # see: https://discuss.pytorch.org/t/runtime-error-77/9392/9?u=sbelharbi
+  device: "cuda:0"
+
+
+###
+# CPU options
+###
+
+cpu:
+  threads: 4
+
+
+###
+# model
+###
+
+model:
+  name: Transducer
+  feature_sz: 1280
+  embed_sz: 512
+  hidden_sz: 1024
+  out_sz: 1024
+  joint_sz: 1024
+  vocab_sz: 2048
+  encoder:
+    name: Encoder
+    rnn_type: LSTM
+    num_layers: 6
+    dropout: 0.05
+    reduction_factor: 1
+    reduction_factors: []
+    layer_norm: false
+    use_tmp_state_pcent: 0.0 # 0.99
+  predictor:
+    name: Predictor
+    rnn_type: LSTM
+    num_layers: 2
+    dropout: 0.05
+    layer_norm: false
+    use_tmp_state_pcent: 0.0 # 0.99
+  joint:
+    enable: true
+    method: "concat"
+    dropout: 0.0
+  layer_norm: false
+  use_tmp_bos: false
+  use_tmp_bos_pcent: 0.2
+  load: true
+
+
+###
+# other
+###
+
+## tokenization
+# for training a tokenizer on the current corpus
+train_tokenizer: false
+dump_labels: false
+wanted_vocab_sz: 2048
+
+# random seed
+seed: 42
+
+# CPU workers
+#  3 -> fine for rnnt
+num_workers: 7
+
+# testing
+tensorboard: true
+wandb: false
+tests_per_epoch: 0 # 8
+
+# language model
+lm:
+  enable: true
+  load: true
+  vocab_sz: 2048
+  embed_sz: 768
+  hidden_sz: 768
+  num_layers: 4
+  p: 0.3
+
+
+###
+# inference
+###
+
+# pre: load a quantized model
+# post: load normal model
+#       and then quantize
+quantization:
+  engine: "fbgemm" # "qnnpack" or "fbgemm"
+  model:
+    pre: false
+    post: false
+  lm:
+    pre: false
+    post: false
+
+overrides:
+  languages:
+    en:
+      name: "English"
+      enable: true
+      grpc_port: 50051
+      tokenizer:
+        model_file: "/models/LibreASR/1.1/en/tokenizer.yttm-model"
+      model:
+        path:
+          n: "/models/LibreASR/1.1/en/model-BAD.pth"
+          q:
+          - "/models/LibreASR/1.1/en/q-encoder.pth"
+          - "/models/LibreASR/1.1/en/q-predictor.pth"
+          - "/models/LibreASR/1.1/en/q-joint.pth"
+      lm:
+        path:
+          n: "/models/LibreASR/1.1/en/lm.pth"
+          q: "/models/LibreASR/1.1/en/q-lm.pth"
+      hypers:
+        tuned: {}
+      cuda:
+        enable: false
+        device: "cpu"
+    de:
+      name: "German"
+      enable: true
+      grpc_port: 50052
+      tokenizer:
+        model_file: "/models/LibreASR/1.1/de/tokenizer.yttm-model"
+      model:
+        path:
+          n: "/models/LibreASR/1.1/de/model.pth"
+          q:
+          - "/models/LibreASR/1.1/de/q-encoder.pth"
+          - "/models/LibreASR/1.1/de/q-predictor.pth"
+          - "/models/LibreASR/1.1/de/q-joint.pth"
+      lm:
+        path:
+          n: "/models/LibreASR/1.1/de/lm.pth"
+          q: "/models/LibreASR/1.1/de/q-lm.pth"
+      hypers:
+        tuned:
+          # these params have been optimized
+          temp_lm: 1.3341
+          temp_model: 0.81868
+          alpha: 1.1935
+          enc_rb_sz: 48
+          enc_rb_trim: 26
+          pre_rb_sz: 6
+          pre_rb_trim: 1
+      cuda:
+        enable: false
+        device: "cpu"
+    fr:
+      name: "French"
+      enable: false
+      grpc_port: 50053
+      model:
+        path: "./tmp/fr/model.pth"
+      tokenizer:
+        model_file: "./tmp/fr/tokenizer.yttm-model"
+    es:
+      name: "Spanish"
+      enable: false
+      grpc_port: 50054
+      model:
+        path: "./tmp/fr/model.pth"
+      tokenizer:
+        model_file: "./tmp/fr/tokenizer.yttm-model"
+    it:
+      name: "Italian"
+      enable: false
+      grpc_port: 50055
+      model:
+        path: "./tmp/it/model.pth"
+      tokenizer:
+        model_file: "./tmp/it/tokenizer.yttm-model"
+  inference:
+    transforms:
+      x:
+        # to target sr + single channel
+        - name: Resample
+        - name: ChannelCut
+
+        # to spectrogram
+        - name: TransformTime
+
+        - name: StackDownsample
+          partial: true
+          args:
+            downsample: 8
+            n_stack: 10
+    
+        # add last dimension
+        - name: FixDimensions
+
+      stream:
+        - name: Resample
+        - name: ChannelCut
+          # - name: StreamPreprocess
+        - name: TransformTime
+        - name: StreamPostprocess
+          partial: true
+          args:
+            n_stack: 10
+        - name: StackDownsample
+          partial: true
+          args:
+            downsample: 8
+            n_stack: 10
+        - name: FixDimensions
+        - name: Buffer
+          partial: true
+          args:
+            n_buffer: 2
+    
+      y:
+        - name: MyOpenLabel
+        - name: MyNumericalize
+        - name: AddLen
+    model:
+      encoder:
+        num_layers: 6
+      predictor:
+        num_layers: 2
+    bs: 1
+    cuda:
+      enable: false
+      device: "cpu"
+    # 10ms -> 160
+    chunk: 160

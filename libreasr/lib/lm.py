@@ -3,20 +3,18 @@ import torch.quantization
 import torch.nn as nn
 import torch.nn.functional as F
 
-from libreasr.lib.utils import standardize
-from libreasr.lib.quantization import maybe_post_quantize
+from libreasr.lib.utils import standardize, try_eval
+from libreasr.lib.quantization import try_quantize, quantize_lm, load_quantized_lm
+from libreasr.lib.defaults import LM_ALPHA, LM_THETA, LM_TEMP, LM_DEBUG
 
-
-ALPHA = 0.1
-THETA = 1.0
-MIN_VAL = -10.0
-
-DEBUG = False
+from IPython.core.debugger import set_trace
 
 
 class LM(nn.Module):
     def __init__(self, vocab_sz, embed_sz, hidden_sz, num_layers, p=0.2, **kwargs):
         super(LM, self).__init__()
+        self.shape_logits = [1, 1, vocab_sz]
+        self.shape_state = [num_layers, 1, hidden_sz]
         self.embed = nn.Embedding(vocab_sz, embed_sz, padding_idx=0)
         self.rnn = nn.LSTM(embed_sz, hidden_sz, batch_first=True, num_layers=num_layers)
         self.drop = nn.Dropout(p)
@@ -25,7 +23,7 @@ class LM(nn.Module):
             # tie weights
             self.linear.weight = self.embed.weight
 
-    def forward(self, x, state=None):
+    def forward(self, x, state=None, temp=LM_TEMP, softmax=True, log=True):
         x = self.embed(x)
         if state:
             x, state = self.rnn(x, state)
@@ -33,8 +31,42 @@ class LM(nn.Module):
             x, state = self.rnn(x)
         x = self.drop(x)
         x = self.linear(x)
-        x = F.log_softmax(x, dim=-1)
+        if softmax:
+            f = F.softmax
+            if log:
+                f = F.log_softmax
+            x = f(x / temp, dim=-1)
         return x, state
+
+    def quantization_fix(self):
+        self.__class__ = QuantizedLM
+
+
+class QuantizedLM(LM):
+    def eval(self):
+        self.train(False)
+        return self
+
+    def train(self, _):
+        try_eval(self)
+        return self
+
+    def to(self, _):
+        return self
+
+    def quantization_fix(self):
+        pass
+
+
+def masked_state_update(mask, state, new_state, device):
+    state = list(state)
+    for i, (ps, nps) in enumerate(zip(state, new_state)):
+        ps, nps = ps.permute(1, 0, 2), nps.permute(1, 0, 2)
+        state[i] = torch.where(mask, ps, nps).permute(1, 0, 2)
+        if device != torch.device("cpu"):
+            state[i] = state[i].contiguous()
+    state = tuple(state)
+    return state
 
 
 class LMFuser:
@@ -44,34 +76,23 @@ class LMFuser:
         self.lm_state = None
         self.has_lm = self.lm is not None
 
-    def advance(self, y_one_char):
+    def advance(self, y_one_char, temp=LM_TEMP):
         if self.has_lm:
-            self.lm_logits, self.lm_state = self.lm(y_one_char, self.lm_state)
-            standardize(self.lm_logits)
-            self.lm_logits[:, :, 0] = MIN_VAL
+            self.lm_logits, self.lm_state = self.lm(
+                y_one_char, self.lm_state, temp=temp, softmax=True, log=False
+            )
 
-    def fuse(self, joint_out, prob, pred, alpha=ALPHA, theta=THETA):
+    def fuse(self, joint_out, prob, pred, alpha=LM_ALPHA, theta=LM_THETA):
         lm_logits = self.lm_logits
         if self.has_lm and torch.is_tensor(lm_logits):
-            standardize(joint_out)
-            joint_out[:, :, :, 0] = MIN_VAL
-            if DEBUG:
-                print(
-                    "lm:",
-                    lm_logits.shape,
-                    lm_logits.mean(),
-                    lm_logits.std(),
-                    lm_logits.max(),
-                )
-                print(
-                    "joint:",
-                    joint_out.shape,
-                    joint_out.mean(),
-                    joint_out.std(),
-                    joint_out.max(),
-                )
             fused = alpha * lm_logits + theta * joint_out
-            prob, pred = fused.max(-1)
+            fused[..., 0] = 0.0
+
+            # sample
+            prob, new_pred = fused.max(-1)
+            new_pred[pred == 0] = 0
+            pred = new_pred
+
             return fused, prob, pred
         return joint_out, prob, pred
 
@@ -80,18 +101,67 @@ class LMFuser:
         self.lm_state = None
 
 
-def load_lm(conf, lang):
+class LMFuserBatch(LMFuser):
+    def advance(self, y_one_char, keep_mask, temp=LM_TEMP):
+        if self.has_lm:
+
+            # init
+            dev = y_one_char.device
+            if self.lm_logits is None:
+                shl, shs = self.lm.shape_logits, self.lm.shape_state
+                shl[0], shs[1] = y_one_char.size(0), y_one_char.size(0)
+                self.lm_logits = torch.zeros(shl, device=dev)
+                z = torch.zeros(shs, device=dev)
+                self.lm_state = (z, z)
+
+            # infer
+            logits, state = self.lm(
+                y_one_char, self.lm_state, temp=temp, softmax=True, log=False
+            )
+
+            # update
+            self.lm_logits = torch.where(keep_mask, self.lm_logits, logits)
+            self.lm_state = masked_state_update(keep_mask, self.lm_state, state, dev)
+
+    def fuse(self, joint_out, prob, pred, alpha=LM_ALPHA, theta=LM_THETA):
+        lm_logits = self.lm_logits
+        if self.has_lm and torch.is_tensor(lm_logits):
+            if lm_logits.dim() == 3:
+                lm_logits = lm_logits.unsqueeze(1)
+            fused = alpha * lm_logits + theta * joint_out
+            fused[..., 0] = 0.0
+            assert joint_out.shape == fused.shape
+
+            # sample
+            prob, new_pred = fused.max(-1)
+            new_pred[pred == 0] = 0
+            pred = new_pred
+
+            return fused, prob, pred
+        return joint_out, prob, pred
+
+
+def load_lm(
+    lm_conf, pre_quantization, post_quantization, lm_path, load=False, device="cpu"
+):
 
     # create model
-    lm = LM(**conf["lm"])
+    lm = LM(**lm_conf).to(device)
     lm.eval()
+    print("[lm] created.")
 
-    # load model
-    lm.load_state_dict(torch.load(conf["lm"]["path"]))
-    lm.eval()
+    if load:
+        # load lm
+        if pre_quantization:
+            lm = load_quantized_lm(lm, lm_path)
+        else:
+            lm.load_state_dict(torch.load(lm_path))
+        lm = lm.eval()
 
-    # quantize
-    lm = maybe_post_quantize(lm)
-    lm.eval()
+        # quantize
+        if post_quantization and not pre_quantization:
+            lm = try_quantize(lm, quantize_lm)
+            lm = lm.eval()
+        print("[lm] loaded.")
 
     return lm

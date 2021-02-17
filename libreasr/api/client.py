@@ -7,8 +7,8 @@ import grpc
 import torchaudio
 import numpy as np
 
-import interfaces.libreasr_pb2 as ap
-import interfaces.libreasr_pb2_grpc as apg
+import libreasr.api.interfaces.libreasr_pb2 as ap
+import libreasr.api.interfaces.libreasr_pb2_grpc as apg
 
 DEMO_AUDIO = "./demo/3729-6852-0035.flac"
 CHUNK_DURATION = 0.08  # secs
@@ -61,7 +61,7 @@ def test_asr(stub):
 
 def run(args):
     with grpc.insecure_channel(f"localhost:{PORT}") as channel:
-        stub = apg.ASRStub(channel)
+        stub = apg.LibreASRStub(channel)
         test_asr(stub)
 
 

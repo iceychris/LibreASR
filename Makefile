@@ -18,18 +18,24 @@ format:
 ###
 
 # DOCKER_IMAGE=asr-pytorch
-DOCKER_IMAGE=iceychris/libreasr:latest
+# DOCKER_IMAGE=iceychris/libreasr:latest
+DOCKER_IMAGE=iceychris/libreasr:gpu-dev
 DOCKER_SHELL=/bin/bash
+DOCKER_EXTRA_ARGS=--runtime=nvidia --shm-size=4096m -v /data/data-remote:/data
 
 drun:
-	docker run -it --rm \
+	docker run $(DOCKER_EXTRA_ARGS) -it --rm \
 		--group-add=audio \
 		--device /dev/snd \
 		-e NUMBA_CACHE_DIR=/tmp \
 		-p 50051:50051 \
 		-p 8889:8889 \
 		-p 8080:8080 \
-		-u 0 -v $(shell pwd)/:/workspace \
+		-p 8265:8265 \
+		-u 0 \
+		-v $(shell pwd)/:/workspace \
+		-v /models:/models \
+		-v $(shell pwd)/ray_results:/root/ray_results \
 		$(DOCKER_IMAGE) $(DOCKER_SHELL) 
 
 dshell:
@@ -41,8 +47,8 @@ dshell:
 # API
 ###
 
-IFACES="./interfaces"
-PY_FIX='s/import\ libreasr/import\ interfaces\.libreasr/g'
+IFACES="./libreasr/api/interfaces"
+PY_FIX='s/import\ libreasr/import\ libreasr\.api\.interfaces\.libreasr/g'
 
 gen:
 	python3 -m grpc_tools.protoc \
@@ -53,23 +59,21 @@ gen:
 	sed -i $(PY_FIX) $(IFACES)/*.py
 
 sen:
-	python3 -u api-server.py en
+	python3 -u -m libreasr.api.server --lang en
 sde:
-	python3 -u api-server.py de
+	python3 -u -m libreasr.api.server --lang de
 
 c: client
 client:
-	python3 -u api-client.py
+	python3 -u -m libreasr.api.client
 
 b: bridge
 bridge:
-	python3 -u api-bridge.py
+	python3 -u -m libreasr.api.bridge
 
 d: deploy
 deploy:
-	make sde &
-	make sen &
-	make b
+	python3 -u -m libreasr serve
 
 deploy_all: deploy_build deploy_save deploy_scp
 deploy_build:
@@ -104,6 +108,9 @@ dev:
 		-p 8080:8080 \
 		-v $(shell pwd)/:/workspace \
 		$(DEV_IMAGE) $(DOCKER_SHELL) 
+
+tests:
+	python3 -m unittest
 
 nb:
 	pip3 install jupyter && jupyter notebook --ip 0.0.0.0 --no-browser --allow-root --port=8889

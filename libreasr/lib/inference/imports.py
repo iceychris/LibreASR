@@ -12,3 +12,4 @@ from fastai2_audio.core.all import AudioTensor
 
 from libreasr.lib.config import *
 from libreasr.lib.data import preload_tfms
+from libreasr.lib.utils import tensorize
