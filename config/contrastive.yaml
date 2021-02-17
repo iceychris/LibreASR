@@ -7,34 +7,40 @@ transforms:
   # independent variable
   x:
     - name: MyOpenAudio
-    - name: ChannelCut
+    # - name: ChannelCut
 
     # resampling
-    - name: Resample
+    # - name: Resample
+    
+    # dummy lol
+    - name: Dummy
+
+    # crop for contrastive
+    - name: MultiCrop
 
     # augmentation
-    - name: ResamplePoly
-      wrap: true
-      partial: true
-      args:
-        delta: 10
+    # - name: ResamplePoly
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     delta: 10
     - name: ChangeVolume
       wrap: true
       partial: true
       args:
         pcent: 0.03
-    - name: MyAddNoise
-      wrap: true
-      partial: true
-      args:
-        noise_level: 0.05
-        color: 0
-    - name: MySignalShifter
-      wrap: true
-      partial: true
-      args:
-        max_time: 0.1
-        direction: 1
+    # - name: MyAddNoise
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     noise_level: 0.05
+    #     color: 0
+    # - name: MySignalShifter
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     max_time: 0.1
+    #     direction: 1
     - name: PadderCutter
     - name: TransformTime
     - name: MyCutFrames
@@ -90,10 +96,12 @@ dataset_paths:
     common-voice-de: "/data/stt/data/common-voice/de"
     common-voice-fr: "/data/stt/data/common-voice/fr"
     common-voice-es: "/data/stt/data/common-voice/es"
-    yt-en: "/data/stt/data/yt/en/en/data"
-    yt-de: "/data/stt/data/yt/de/de"
+    common-voice-it: "/data/stt/data/common-voice/it"
+    yt-en: "/data/stt/data/yt/en"
+    yt-de: "/data/stt/data/yt/de"
     yt-fr: "/data/stt/data/yt/fr"
     yt-es: "/data/stt/data/yt/es"
+    yt-it: "/data/stt/data/yt/it"
 
 # selected datasets
 datasets:
@@ -101,10 +109,6 @@ datasets:
     train:
       - common-voice-en
       - yt-en
-        #       - librispeech-0
-        #       - librispeech-1
-        #       - librispeech-2
-        #       - tatoeba-en
     valid:
       - common-voice-en
       # - yt-en
@@ -129,12 +133,19 @@ datasets:
     valid:
       - common-voice-es
       # - yt-es
+  it:
+    train:
+      - common-voice-it
+      - yt-it
+    valid:
+      - common-voice-it
+      # - yt-it
 
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 0.01 # 1.0  # 0.25 # 1.0
-    valid: 1.0  # 1.0  # 1.0
+    train: 0.001 # 0.75 # 0.25  # 0.75  # 0.5  # 0.5  # 1.0  # 0.25 # 1.0
+    valid: 0.1   # 1.0  # 1.0   # 1.0  # 1.0  # 1.0  # 1.0
     test: 1.0
 
 
@@ -171,7 +182,7 @@ tokenizer:
 
 
 ###
-# data limits
+# data
 ###
 
 # apply the following limits
@@ -179,16 +190,25 @@ tokenizer:
 apply_limits: True
 
 # audio length [seconds]
-almins: 0.5
-almaxs: 10.0 # 20.0 # 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+almins: 3.05 # 2.0 # 0.5
+almaxs: 20.0 # 10.0 # 20.0 # 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 150 # 350 # 180 # 120 # 80 # 130 # 80 # 60 # 100
+y_max: 250 # 150 # 350 # 180 # 120 # 80 # 130 # 80 # 60 # 100
 y_max_words: 100
 
 # which dataset to use
-suffix: "" # "cat-longy" # "cat-mix" # cat-4
+suffix: "cat-2468" # "cat-longy" # "cat-mix" # cat-4
+
+# dataloader settings
+dataloader_args:
+
+  # maximum batch size
+  bs_max: 192
+
+  # batch size multiplier
+  bs_mul: 250.
 
 
 ###
@@ -227,25 +247,29 @@ model:
   joint_sz: 1024
   vocab_sz: 2048
   encoder:
+    name: Encoder
+    num_layers: 6 # 7
     rnn_type: "LSTM"
-    num_layers: 6
     dropout: 0.05
     reduction_factor: 1
     reduction_factors: []
-    layer_norm: false
     use_tmp_state_pcent: 0.0 # 0.99
   predictor:
+    name: Predictor
     rnn_type: "LSTM"
     num_layers: 2
     dropout: 0.05
-    layer_norm: false
     use_tmp_state_pcent: 0.0 # 0.99
   joint:
+    enable: false
     method: "concat"
     dropout: 0.0
-  layer_norm: false
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
+  # contrastive-specific
+  extra:
+    cache_sz: 0
+    modalities: 3
 quantized: false
 
 
@@ -295,7 +319,9 @@ batching:
   batch_size_train: "auto"
 
   # batch size for validation dataset
-  batch_size_valid: 512 # 128 # 32
+  #  2 modalities: 256 (!)
+  #  3 modalities: 192
+  batch_size_valid: 192 # 128 # 32
 
   # gradient accumulation
   #  (number of batches)
@@ -320,7 +346,7 @@ seed: 42
 
 # CPU workers
 #  3 -> fine for rnnt
-num_workers: 7
+num_workers: 7 # 4
 
 # testing
 tensorboard: true

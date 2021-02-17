@@ -34,7 +34,8 @@ class LibreASRInstance:
         if inspect.isgeneratorfunction(sth):
             sth = sth()
         if isinstance(
-            sth, (types.GeneratorType, list, tuple, map, filter, collections.Iterator)
+            sth,
+            (types.GeneratorType, list, tuple, map, filter, collections.abc.Iterator),
         ):
             return self._transcribe_stream_generator(sth, **kwargs)
         elif isinstance(sth, queue.Queue):

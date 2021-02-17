@@ -145,20 +145,17 @@ model:
     dropout: 0.05
     reduction_factor: 1
     reduction_factors: []
-    layer_norm: false
     use_tmp_state_pcent: 0.0 # 0.99
   predictor:
     name: Predictor
     rnn_type: LSTM
     num_layers: 2
     dropout: 0.05
-    layer_norm: false
     use_tmp_state_pcent: 0.0 # 0.99
   joint:
     enable: true
     method: "concat"
     dropout: 0.0
-  layer_norm: false
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
   load: true

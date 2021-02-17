@@ -22,7 +22,7 @@ from libreasr.lib.loss import get_loss_func
 from libreasr.lib.optimizer import AdaHessian, Apollo, ranger_adabelief
 
 
-HESSIAN_EVERY = 50
+HESSIAN_EVERY = 1  # 50
 
 
 def transducer_splitter(m, adahessian=False):
@@ -30,7 +30,10 @@ def transducer_splitter(m, adahessian=False):
         return [p for p in mod.parameters() if p.requires_grad]
 
     if adahessian:
-        l = L([*m.joint.param_groups(), *m.predictor.param_groups()])
+        # l = L([*m.joint.param_groups(), *m.predictor.param_groups()])
+        l = L([*m.param_groups()])
+        l = [item for sublist in l for item in sublist]
+        l = [p for p in l if p.requires_grad]
         for p in l:
             print(p.shape)
         print(len(l))
@@ -116,7 +119,6 @@ class HutchinsonTraceCallback(Callback):
                 # print(p.shape)
                 params.append(p)
                 grads.append(p.grad)
-        # print(len(params))
 
         # self._clip_grad_norm(max_norm=0., params=params)   # Not sure if this is needed...
 
@@ -131,19 +133,20 @@ class HutchinsonTraceCallback(Callback):
                 t.mul_(2.0)
                 t.sub_(1.0)
 
-        # from IPython.core.debugger import set_trace; set_trace()
-        # print(len(params), len(grads))
-
         # this line is very expensive memory-wise
         h_zs = torch.autograd.grad(
             grads, params, grad_outputs=self.zs, only_inputs=True, retain_graph=False
         )
 
+        # debug
+        # from IPython.core.debugger import set_trace; set_trace()
+        # print(len(params), len(grads))
+
         # @LESSW CODE
         self.hutchinson_trace = []
         for hz, z in zip(h_zs, self.zs):
             param_size = hz.size()
-            if len(param_size) <= 2:  # for 0/1/2D tensor
+            if len(param_size) <= 3:  # was <= 2 before, for 0/1/2D tensor
                 tmp_output = torch.abs(hz * z) + 0.0  # .float()
                 self.hutchinson_trace.append(
                     tmp_output

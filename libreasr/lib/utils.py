@@ -132,6 +132,16 @@ def noop(x=None, *args, **kwargs):
     return x
 
 
+class noop1:
+    def __call__(self, *args, **kwargs):
+        if len(args) == 1:
+            return args[0]
+        return args
+
+    def param_groups(self):
+        return []
+
+
 def wrap_transform(f, ignore="all"):
     def _inner(*args, **kwargs):
         if ignore == "all":

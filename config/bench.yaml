@@ -228,20 +228,17 @@ model:
     dropout: 0.05
     reduction_factor: 1
     reduction_factors: []
-    layer_norm: false
     use_tmp_state_pcent: 0.99
   predictor:
     name: TransformerPredictor
     rnn_type: "LSTM"
     num_layers: 2
     dropout: 0.05
-    layer_norm: false
     use_tmp_state_pcent: 0.99
   joint:
     enable: false
     method: "concat"
     dropout: 0.0
-  layer_norm: false
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
 quantized: false

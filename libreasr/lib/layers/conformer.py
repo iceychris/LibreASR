@@ -173,6 +173,9 @@ class ConformerConvModule(nn.Module):
                 inner_dim, inner_dim, kernel_size=kernel_size, padding=padding
             ),
             nn.BatchNorm1d(inner_dim) if not causal else nn.Identity(),
+            # Rearrange('b c n -> b n c'),
+            # nn.LayerNorm(inner_dim),
+            # Rearrange('b n c -> b c n'),
             Swish(),
             nn.Conv1d(inner_dim, dim, 1),
             Rearrange("b c n -> b n c"),

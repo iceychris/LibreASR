@@ -96,7 +96,7 @@ class OpenAudioSpan(Transform):
         else:
             xlen = int((xlen / 1000.0) * sr) + pad
         sig, sr_sig = torchaudio.load(fname, frame_offset=xstart, num_frames=xlen)
-        return AudioTensor(sig, sr=sr_csv if use_sr_csv else sr_sig)
+        return AudioTensor(sig[:1, :], sr=sr_csv if use_sr_csv else sr_sig)
 
 
 class MyOpenAudio(Transform):
@@ -124,9 +124,10 @@ class ChannelCut(Transform):
 
     def encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
-        if not i.size(0) == self.n_chans:
-            return AudioTensor(i[range(self.n_chans)], i.sr)
-        return i
+        # if not i.size(0) == self.n_chans:
+        #     return AudioTensor(i[range(self.n_chans)], i.sr)
+        # return i
+        return AudioTensor(i[:1], i.sr)
 
 
 class Resample(Transform):
@@ -145,6 +146,47 @@ class Resample(Transform):
                 None
             ]
         return AudioTensor(res, self.sr)
+
+
+class Dummy(Transform):
+    order = 3
+
+    def __init__(self, **kwargs):
+        pass
+
+    def encodes(self, i: AudioTensor) -> AudioTensor:
+        return i
+
+
+class MultiCrop(Transform):
+    order = 4
+
+    def __init__(self, random=True, duration=1.5, crops=2, silence=0.25, **kwargs):
+        self.random = random
+        self.d = duration
+        self.crops = crops
+        self.silence = silence
+        assert crops >= 2
+
+    def encodes(self, i: AudioTensor) -> AudioTensor:
+        debug(self)
+        ds = int(self.d * i.sr)
+        ss = int(self.silence * i.sr)
+        n = self.crops
+        fs = n * ds + (n - 1) * ss
+        offset = 0
+        chans = i.size(0)
+        if self.random:
+            _max = i.size(1) - n * ds
+            if not _max <= 0:
+                offset = torch.randint(low=0, high=_max, size=(1,)).item()
+        ts = []
+        for j in range(n):
+            _from, _to = offset + ds * j, offset + ds * (j + 1)
+            ts.append(i[:, _from:_to])
+            if j != n - 1:
+                ts.append(torch.zeros(chans, ss))
+        return AudioTensor(torch.cat(ts, dim=1), i.sr)
 
 
 class ResamplePoly(Transform):
@@ -233,6 +275,17 @@ class PadderCutter(Transform):
         if sig.size(1) / sr >= max_sec:
             sig = sig[:, : int(sr * max_sec)]
         return sig
+
+
+class FixRawAudio(Transform):
+    order = 11
+
+    def __init__(self, **kwargs):
+        pass
+
+    def encodes(self, t: Tensor) -> None:
+        debug(self)
+        return t.data.unsqueeze(-1).unsqueeze(-1)
 
 
 def pad_around(t1, _prev=0, _next=0, l=0.01, sr=16000):
@@ -327,7 +380,8 @@ class TransformTime(Transform):
         res = torch.cat(ds, 1)
         res = res.permute(0, 2, 1)  # .detach()
 
-        return res
+        # only take first channel
+        return res[:1]
 
 
 class StreamPostprocess(Transform):

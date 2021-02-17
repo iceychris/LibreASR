@@ -35,7 +35,7 @@ class ResidualAdapter(Module):
         self.hidden_sz = hidden_sz
 
         self.activation = activation()
-        self.layer_norm = nn.LayerNorm(hidden_sz)
+        self.ln = nn.LayerNorm(hidden_sz)
 
         if projection == "conv":
             pass
@@ -50,7 +50,7 @@ class ResidualAdapter(Module):
         inp = x
 
         # layer norm
-        x = self.layer_norm(x)
+        x = self.ln(x)
 
         # down projection
         x = self.down(x)
@@ -63,6 +63,33 @@ class ResidualAdapter(Module):
         return x + inp
 
 
+class Preprocessor(Module):
+    def __init__(self):
+        from nnAudio.Spectrogram import MelSpectrogram
+
+        self.spec = MelSpectrogram(
+            sr=16000,
+            trainable_mel=True,
+            trainable_STFT=True,
+            n_fft=2048,
+            n_mels=128,
+            win_length=400,
+            hop_length=160,
+        )
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, x, xl=None):
+        x = self.spec(x[..., :, 0, 0]).permute(0, 2, 1).contiguous()
+        x = x.unfold(-2, 10, 8).contiguous()
+        x = x.view(x.size(0), x.size(1), -1).contiguous()
+        if xl is not None:
+            xl = torch.clamp(xl // (160 * 8), min=0, max=x.size(1))
+            return x, xl
+        return x
+
+
 class Encoder(Module):
     def __init__(
         self,
@@ -73,7 +100,6 @@ class Encoder(Module):
         num_layers=2,
         trace=True,
         device="cuda:0",
-        layer_norm=False,
         rnn_type="LSTM",
         use_tmp_state_pcent=0.9,
         **kwargs,
@@ -87,9 +113,9 @@ class Encoder(Module):
             rnn_type=rnn_type,
             reduction_indices=[],  # 1
             reduction_factors=[],  # 2
-            layer_norm=layer_norm,
             rezero=False,
             utsp=use_tmp_state_pcent,
+            norm="bn",
         )
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
@@ -121,7 +147,6 @@ class Predictor(Module):
         dropout=0.01,
         num_layers=2,
         blank=0,
-        layer_norm=False,
         rnn_type="NBRC",
         use_tmp_state_pcent=0.9,
         **kwargs,
@@ -138,8 +163,9 @@ class Predictor(Module):
             hidden_sz,
             num_layers,
             rnn_type=rnn_type,
-            layer_norm=layer_norm,
+            rezero=False,
             utsp=use_tmp_state_pcent,
+            norm="bn",
         )
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
@@ -159,20 +185,55 @@ class Predictor(Module):
         return x, state
 
 
+class InnerJoint(Module):
+    def __init__(self, i, h, v):
+        self.net = nn.Sequential(
+            nn.Linear(i, h),
+            nn.Tanh(),
+            nn.Linear(h, v),
+        )
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class Joint(Module):
-    def __init__(self, out_sz, joint_sz, vocab_sz, joint_method):
+    def __init__(self, out_sz, joint_sz, vocab_sz, joint_method, reversible=False):
         self.joint_method = joint_method
+        self.reversible = reversible
         if joint_method == "add":
             input_sz = out_sz
         elif joint_method == "concat":
             input_sz = 2 * out_sz
         else:
             raise Exception("No such joint_method")
-        self.joint = nn.Sequential(
-            nn.Linear(input_sz, joint_sz),
-            nn.Tanh(),
-            nn.Linear(joint_sz, vocab_sz),
-        )
+        if reversible:
+            import memcnn
+
+            inv_joint = memcnn.AdditiveCoupling(
+                Fm=InnerJoint(input_sz // 2, joint_sz // 2, vocab_sz // 2),
+                Gm=InnerJoint(input_sz // 2, joint_sz // 2, vocab_sz // 2),
+                split_dim=3,
+            )
+            assert memcnn.is_invertible_module(
+                inv_joint, test_input_shape=(4, 3, 2, input_sz)
+            )
+            inv_joint = memcnn.InvertibleModuleWrapper(
+                fn=inv_joint, keep_input=False, keep_input_inverse=False
+            )
+            assert memcnn.is_invertible_module(
+                inv_joint, test_input_shape=(4, 3, 2, input_sz)
+            )
+            self.joint = inv_joint
+        else:
+            self.joint = nn.Sequential(
+                nn.Linear(input_sz, joint_sz),
+                nn.Tanh(),
+                nn.Linear(joint_sz, vocab_sz),
+            )
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
@@ -196,8 +257,15 @@ class Joint(Module):
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
             raise Exception("No such joint_method")
-        # x = torch.utils.checkpoint.checkpoint_sequential(self.joint, 3, x)
-        x = self.joint(x)
+        if self.reversible:
+            if self.training:
+                x = self.joint(x)
+            else:
+                self.joint.disable = True
+                x = self.joint(x)
+                self.joint.disable = False
+        else:
+            x = self.joint(x)
         if softmax:
             f = F.softmax
             if log:
@@ -236,9 +304,11 @@ class Transducer(Module):
         encoder_kwargs={},
         predictor_kwargs={},
         joint=True,
+        learnable_stft=False,
         device="cpu",
         **kwargs,
     ):
+        self.preprocessor = Preprocessor() if learnable_stft else noop1()
         self.encoder = eval(encoder_kwargs["name"])(
             feature_sz,
             hidden_sz=hidden_sz,
@@ -291,12 +361,14 @@ class Transducer(Module):
             predictor_kwargs=conf["model"]["predictor"],
             joint=conf["model"]["joint"]["enable"],
             device=conf["cuda"]["device"],
+            **conf["model"].get("extra", {}),
         ).to(conf["cuda"]["device"])
         m.mp = conf.get("mp", False)
         return m
 
     def param_groups(self):
         return [
+            self.preprocessor.param_groups(),
             self.encoder.param_groups(),
             self.predictor.param_groups(),
             self.joint.param_groups(),
@@ -337,6 +409,9 @@ class Transducer(Module):
         x, y, xl, yl = tpl
         if self.mp:
             x = x.half()
+
+        # preprocess
+        x, xl = self.preprocessor(x, xl)
 
         # encoder
         x = x.reshape(x.size(0), x.size(1), -1)
@@ -533,6 +608,8 @@ class Transducer(Module):
 
         # denumericalize
         strs = []
+        if len(predictions) == 0:
+            predictions = [torch.ones((x.size(0),), dtype=torch.int64) * self.blank]
         predictions = torch.stack(predictions, dim=1)
         for p in predictions:
             s = self.lang.denumericalize(p.cpu().numpy().tolist())
@@ -579,6 +656,9 @@ class Transducer(Module):
         # reshape x to (1, C, T, H...)
         x = x[None]
 
+        # preprocess
+        x = self.preprocessor(x)
+
         # encode full spectrogram (all timesteps)
         encoder_out = self.encoder(x)[0]
 
@@ -606,7 +686,7 @@ class Transducer(Module):
                 )
 
                 # decode one character
-                extra["outs"].append(joint_out.clone())
+                # extra["outs"].append(joint_out.clone())
                 prob, pred = joint_out.max(-1)
                 pred = int(pred)
                 log_p += float(prob)
@@ -848,9 +928,9 @@ class QuantizedTransducer(Transducer):
         return self
 
 
-def masked_mean(t, mask, dim=1, random=False):
+def masked_mean(t, mask, dim=1, thresh=0.05, random=False):
     if random:
-        r = torch.zeros(t.size(dim), dtype=t.dtype, device=t.device).uniform_() > 0.5
+        r = torch.zeros(t.size(dim), dtype=t.dtype, device=t.device).uniform_() > thresh
         r[0] = 1
         r = r.expand(mask.shape)
         mask = mask & r
@@ -858,12 +938,49 @@ def masked_mean(t, mask, dim=1, random=False):
     return t.sum(dim=1) / mask.sum(dim=1)[..., None]
 
 
+def crop(x, xl, size=30, seq=1, random=False):
+    N = x.size(0)
+
+    # choose bounds
+    until = torch.clamp(xl - size, min=1).long()
+    new_xl = xl - until
+    if random:
+        start = (torch.rand((N,), device=x.device) * until).long()
+    else:
+        start = 0 if seq == 1 else size + 1
+        start = (torch.ones((N,), device=x.device) * start).long()
+    end = start + new_xl
+
+    # new x
+    shp = (N, size, *x.shape[2:])
+    new_x = torch.zeros(*shp, device=x.device, dtype=x.dtype)
+    for i in range(N):
+        # set_trace()
+        span = end[i] - start[i]
+        new_x[i, :span] = x[i, start[i] : end[i]]
+
+    return new_x, new_xl
+
+
 class ContrastiveTransducer(Transducer):
-    def __init__(self, *args, hidden_sz=1024, **kwargs):
+    def __init__(
+        self,
+        *args,
+        hidden_sz=1024,
+        cache_sz=128,
+        modalities=2,
+        learnable_stft=False,
+        **kwargs,
+    ):
         a, b = hidden_sz, hidden_sz
-        self.e_latent = nn.Linear(a, b, bias=False)
-        self.p_latent = nn.Linear(a, b, bias=False)
-        self.temperature = nn.Parameter(torch.tensor(1.0))
+        self.latents = nn.ModuleList([nn.Linear(a, b) for _ in range(modalities)])
+        temps = 1 if modalities == 2 else 3
+        self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
+        self.cache_sz = cache_sz
+        self.modalities = modalities
+        self.learnable_stft = learnable_stft
+        self.cache = [[] for _ in range(modalities)]
+        self.preprocessor = Preprocessor() if learnable_stft else noop1()
         super().__init__(*args, **kwargs)
 
     @staticmethod
@@ -875,15 +992,31 @@ class ContrastiveTransducer(Transducer):
         return [
             [
                 self.temperature,
-                self.e_latent.weight,
-                self.p_latent.weight,
+                *[l.weight for l in self.latents],
+                *self.preprocessor.param_groups(),
             ],
             self.encoder.param_groups(),
             self.predictor.param_groups(),
-            self.joint.param_groups(),
         ]
 
-    def forward(self, tpl, return_logits=False, softmax=True):
+    def cache_and_extend(self, *mods, dim=0):
+        new_mods = list(mods)
+        if self.training:
+            for i, mod in enumerate(mods):
+                # if cache is non-empty
+                # concat cache to new_mods
+                if len(self.cache[0]) > 0:
+                    new_mods[i] = torch.cat([*self.cache[i], mod], dim)
+
+                # add to cache
+                self.cache[i].insert(0, mod.detach())
+
+                # cap cache size
+                self.cache[i] = self.cache[i][: self.cache_sz]
+            return new_mods
+        return new_mods
+
+    def forward(self, tpl, return_logits=False):
         """
         (x, y)
         x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
@@ -895,73 +1028,154 @@ class ContrastiveTransducer(Transducer):
         if self.mp:
             x = x.half()
 
-        # encoder
+        # preprocess signal
+        x, xl = self.preprocessor(x, xl)
+
+        # [N, T, H, W] -> [N, T, H]
         x = x.reshape(x.size(0), x.size(1), -1)
-        encoder_out = self.encoder(x, lengths=xl)
 
-        # N: batch size
-        # T: n frames (time)
-        # H: hidden features
-        N, T, H = encoder_out.size()
+        if self.modalities == 2:
 
-        # predictor
-        # concat first bos (yconcat is y shifted right by 1)
-        bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
-        yconcat = torch.cat((bos, y), dim=1)
-        # yl here because we want to omit the last label
-        # in the resulting state (we had (yl + 1))
-        predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
-        U = predictor_out.size(1)
+            # encoder
+            encoder_out = self.encoder(x, lengths=xl)
 
-        ###
-        # following lucidrains CLIP model:
-        #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
-        ###
+            # N: batch size
+            # T: n frames (time)
+            # H: hidden features
+            N, T, H = encoder_out.size()
 
-        # create masks
-        emask = torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
-        pmask = torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
+            # predictor
+            # concat first bos (yconcat is y shifted right by 1)
+            bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
+            yconcat = torch.cat((bos, y), dim=1)
+            # yl here because we want to omit the last label
+            # in the resulting state (we had (yl + 1))
+            predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
+            U = predictor_out.size(1)
 
-        # reduce
-        e = masked_mean(encoder_out, emask, dim=1)  # , random=self.training)
-        p = masked_mean(predictor_out, pmask, dim=1)  # , random=self.training)
+            ###
+            # following lucidrains CLIP model:
+            #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
+            ###
 
-        # project
-        e = self.e_latent(e)
-        p = self.p_latent(p)
+            # create masks
+            emask = (
+                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+            )
+            pmask = (
+                torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
+            )
 
-        # normalize
-        e, p = map(lambda t: F.normalize(t, p=2, dim=-1), (e, p))
+            # reduce
+            e = masked_mean(encoder_out, emask, dim=1, random=self.training)
+            p = masked_mean(predictor_out, pmask, dim=1, random=self.training)
 
-        # loss
-        temp = self.temperature.exp()
-        sim = einsum("i d, j d -> i j", e, p) * temp
-        labels = torch.arange(N, device=x.device)
-        if return_logits:
-            return e, p, sim, labels
-        return sim, labels
+            # project
+            e = self.latents[0](e)
+            p = self.latents[1](p)
 
+            # normalize
+            e, p = map(lambda t: F.normalize(t, p=2, dim=-1), (e, p))
 
-class CTCModel(Module):
-    def __init__(self):
-        layer = nn.TransformerEncoderLayer(128, 8)
-        self.encoder = nn.TransformerEncoder(layer, 8)
-        self.linear = nn.Linear(128, 2048)
+            # cache for later
+            # and extend batch
+            e, p = self.cache_and_extend(e, p)
+            N = e.size(0)
 
-    def param_groups(self):
-        return [p for p in self.parameters() if p.requires_grad]
+            # loss
+            temp = self.temperature.exp()
+            sim = einsum("i d, j d -> i j", e, p) * temp
+            labels = torch.arange(N, device=x.device)
+            if return_logits:
+                return e, p, sim, labels
 
-    @staticmethod
-    def from_config(conf, lang):
-        return CTCModel()
+            # calculate losses
+            l1 = F.cross_entropy(sim, labels)
+            l2 = F.cross_entropy(sim.T, labels)
+            return (l1 + l2) / 2.0
 
-    def forward(self, tpl):
-        x, y, xl, yl = tpl
-        x = x.view(x.size(1), x.size(0), -1).contiguous()
-        x = self.encoder(x)
-        x = self.linear(x)
-        x = F.log_softmax(x, -1)
-        return x
+        # N modalities
+        else:
+
+            # compute two crops
+            x1, xl1 = crop(x, xl, seq=1, random=self.training)
+            x2, xl2 = crop(x, xl, seq=2, random=self.training)
+
+            # encode
+            a = self.encoder(x1, lengths=xl1)
+            b = self.encoder(x2, lengths=xl2)
+
+            # N: batch size
+            # T: n frames (time)
+            # H: hidden features
+            N, T, H = a.size()
+
+            # predictor
+            # concat first bos (yconcat is y shifted right by 1)
+            bos = self.grab_bos(y, yl, bs=N, device=a.device)
+            yconcat = torch.cat((bos, y), dim=1)
+            # yl here because we want to omit the last label
+            # in the resulting state (we had (yl + 1))
+            c, _ = self.predictor(yconcat, lengths=yl + 1)
+            U = c.size(1)
+
+            ###
+            # following lucidrains CLIP model:
+            #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
+            ###
+
+            # create masks
+            amask = (
+                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
+                < xl1[:, None]
+            )
+            bmask = (
+                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
+                < xl2[:, None]
+            )
+            cmask = (
+                torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
+            )
+
+            # reduce
+            a = masked_mean(a, amask, dim=1, random=self.training)
+            b = masked_mean(b, bmask, dim=1, random=self.training)
+            c = masked_mean(c, cmask, dim=1, random=self.training)
+
+            # project
+            a = self.latents[0](a)
+            b = self.latents[1](b)
+            c = self.latents[2](c)
+
+            # normalize
+            a, b, c = map(lambda t: F.normalize(t, p=2, dim=-1), (a, b, c))
+
+            # cache for later
+            # and extend batch
+            a, b, c = self.cache_and_extend(a, b, c)
+            N = a.size(0)
+
+            # similarity scores
+            temp1 = self.temperature[0].exp()
+            temp2 = self.temperature[1].exp()
+            temp3 = self.temperature[2].exp()
+            sim1 = einsum("i d, j d -> i j", a, b) * temp1
+            sim2 = einsum("i d, j d -> i j", b, c) * temp2
+            sim3 = einsum("i d, j d -> i j", c, a) * temp3
+
+            # create labels
+            labels = torch.arange(N, device=x.device).long()
+            if return_logits:
+                return (a, b, c), (sim1, sim2, sim3), labels
+
+            # calculate losses
+            loss = torch.zeros((1,), device=x.device)
+            count = 0.0
+            for sim in (sim1, sim2, sim3):
+                loss += F.cross_entropy(sim, labels)
+                loss += F.cross_entropy(sim.T, labels)
+                count += 2
+            return loss / count
 
 
 class ConformerEncoder(Module):
@@ -974,30 +1188,30 @@ class ConformerEncoder(Module):
         num_layers=2,
         trace=True,
         device="cuda:0",
-        layer_norm=False,
-        rnn_type="LSTM",
         use_tmp_state_pcent=0.9,
         **kwargs,
     ):
         self.num_layers = num_layers
         self.input_norm = nn.LayerNorm(feature_sz)
-        self.proj = nn.Linear(feature_sz, hidden_sz)
-        self.conformer = ConformerBlock(
-            dim=hidden_sz,
-            dim_head=64,
-            heads=8,
-            ff_mult=4,
-            conv_expansion_factor=2,
-            conv_kernel_size=31,
-            attn_dropout=0.0,
-            ff_dropout=0.0,
-            conv_dropout=0.0,
+        hidden_conformer = 384  # hidden_sz // 2
+        self.pre_proj = nn.Linear(feature_sz, hidden_conformer)
+        self.conformer = nn.Sequential(
+            *[
+                ConformerBlock(
+                    dim=hidden_conformer,
+                    dim_head=64,
+                    heads=8,
+                    ff_mult=4,
+                    conv_expansion_factor=2,
+                    conv_kernel_size=31,
+                    attn_dropout=0.0,
+                    ff_dropout=0.0,
+                    conv_dropout=0.0,
+                )
+                for _ in range(num_layers)
+            ]
         )
-        self.drop = nn.Dropout(dropout)
-        if not hidden_sz == out_sz:
-            self.linear = nn.Linear(hidden_sz, out_sz)
-        else:
-            self.linear = nn.Sequential()
+        self.post_proj = nn.Linear(hidden_conformer, out_sz)
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
@@ -1005,10 +1219,9 @@ class ConformerEncoder(Module):
     def forward(self, x, state=None, lengths=None, return_state=False):
         x = x.reshape((x.size(0), x.size(1), -1))
         x = self.input_norm(x)
-        x = self.proj(x)
-        x = self.conformer(x)
-        x = self.drop(x)
-        x = self.linear(x)
+        x = self.pre_proj(x)
+        x = torch.utils.checkpoint.checkpoint_sequential(self.conformer, 8, x)
+        x = self.post_proj(x)
         if return_state:
             return x, state
         return x
@@ -1024,18 +1237,17 @@ class TransformerPredictor(Module):
         dropout=0.01,
         num_layers=2,
         blank=0,
-        layer_norm=False,
-        rnn_type="NBRC",
         use_tmp_state_pcent=0.9,
+        **kwargs,
     ):
         self.vocab_sz = vocab_sz
         self.num_layers = num_layers
-        from x_transformers import TransformerWrapper, Encoder
+        from x_transformers import TransformerWrapper, Encoder as XEncoder
 
         self.transformer = model = TransformerWrapper(
             num_tokens=vocab_sz,
             max_seq_len=1024,
-            attn_layers=Encoder(dim=hidden_sz, depth=4, heads=8),  # 12
+            attn_layers=XEncoder(dim=hidden_sz, depth=num_layers, heads=8),  # 12
         )
         self.drop = nn.Dropout(dropout)
         self.linear = nn.Linear(hidden_sz * 2, hidden_sz)
@@ -1045,7 +1257,6 @@ class TransformerPredictor(Module):
 
     def forward(self, x, state=None, lengths=None):
         x = self.transformer(x)
-        print(x.shape)
         x = self.drop(x)
         x = self.linear(x)
         return x, state
