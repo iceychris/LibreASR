@@ -1,0 +1,37 @@
+name: build-sphinx-to-gh-pages
+
+env:
+  GITHUB_ACTOR: iceychris
+  GITHUB_TOKEN: ${{ secrets.LIBREASR_SECRET }}
+  GITHUB_SRC_REPOSITORY: iceychris/libreasr
+  GITHUB_DST_REPOSITORY: libreasr/libreasr.github.io
+  GITHUB_DST_BRANCH: gh-pages
+
+on: 
+  push:
+    branches:
+      - dev
+
+jobs:
+
+  build_sphinx_job:
+    runs-on: ubuntu-latest
+    container: debian:buster-slim
+
+    steps:
+    
+      - name: Get prerequisites and clone repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.LIBREASR_SECRET }}
+        run: |
+          set -x
+          apt-get update
+          apt-get install -y git
+          git clone "https://github.com/${GITHUB_SRC_REPOSITORY}.git" .
+        shell: bash
+
+      - name: Run build script for Sphinx pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.LIBREASR_SECRET }}
+        run: "docs/build-sphinx.sh"
+        shell: bash
