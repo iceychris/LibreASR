@@ -1,9 +1,12 @@
 #!/bin/bash
 set -x
 
+# chdir into docs dir
+pushd ./docs
+
 # setup
 apt-get update
-apt-get -y install git rsync python3-sphinx
+apt-get -y install git rsync python3-sphinx python3-pip
 pip3 install -y -r requirements.txt
 
 pwd ls -lah
@@ -32,7 +35,7 @@ pushd "${docroot}"
 
 git init
 git remote add deploy "https://token:${GITHUB_TOKEN}@github.com/${GITHUB_DST_REPOSITORY}.git"
-git checkout -b ${GITHUB_BRANCH}
+git checkout -b ${GITHUB_DST_BRANCH}
  
 # Adds .nojekyll file to the root to signal to GitHub that  
 # directories that start with an underscore (_) can remain
@@ -46,7 +49,7 @@ msg="Updating Docs for commit ${GITHUB_SHA} made on `date -d"@${SOURCE_DATE_EPOC
 git commit -am "${msg}"
  
 # overwrite the contents of the gh-pages branch on our github.com repo
-git push deploy ${GITHUB_BRANCH} --force
+git push deploy ${GITHUB_DST_BRANCH} --force
  
 popd # return to main repo sandbox root
  
