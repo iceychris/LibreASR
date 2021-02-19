@@ -7,66 +7,74 @@ transforms:
   # independent variable
   x:
     - name: MyOpenAudio
-    - name: ChannelCut
 
-    # resampling
-    - name: Resample
-
-    # augmentation
-    - name: ResamplePoly
-      wrap: true
-      partial: true
-      args:
-        delta: 10
-    - name: ChangeVolume
-      wrap: true
-      partial: true
-      args:
-        pcent: 0.03
-    - name: MyAddNoise
-      wrap: true
-      partial: true
-      args:
-        noise_level: 0.05
-        color: 0
-    - name: MySignalShifter
-      wrap: true
-      partial: true
-      args:
-        max_time: 0.1
-        direction: 1
+    # bounds
     - name: PadderCutter
-    - name: TransformTime
-    - name: MyCutFrames
-      wrap: true
-      partial: true
-      args:
-        max_front: 1
-        max_back: 1
-    - name: MyMaskTime
-      wrap: true
-      partial: true
-      args:
-        num_masks: 2
-        size: 4
-    - name: MyMaskFreq
-      wrap: true
-      partial: true
-      args:
-        num_masks: 4
-        size: 4
 
-    # reduce time dimension
-    #  by downsample
-    # and stack
-    - name: StackDownsample
-      partial: true
-      args:
-        downsample: 8
-        n_stack: 10
+    # prepare for batching
+    - name: FixRawAudio
 
-    # make data ready for batching
-    - name: FixDimensions
+          #     - name: MyOpenAudio
+          #     - name: ChannelCut
+          # 
+          #     # resampling
+          #     - name: Resample
+          # 
+          #     # augmentation
+          #     - name: ResamplePoly
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         delta: 10
+          #     - name: ChangeVolume
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         pcent: 0.03
+          #     - name: MyAddNoise
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         noise_level: 0.05
+          #         color: 0
+          #     - name: MySignalShifter
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         max_time: 0.1
+          #         direction: 1
+          #     - name: PadderCutter
+          #     - name: TransformTime
+          #     - name: MyCutFrames
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         max_front: 1
+          #         max_back: 1
+          #     - name: MyMaskTime
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         num_masks: 2
+          #         size: 4
+          #     - name: MyMaskFreq
+          #       wrap: true
+          #       partial: true
+          #       args:
+          #         num_masks: 4
+          #         size: 4
+          # 
+          #     # reduce time dimension
+          #     #  by downsample
+          #     # and stack
+          #     - name: StackDownsample
+          #       partial: true
+          #       args:
+          #         downsample: 8
+          #         n_stack: 10
+          # 
+          #     # make data ready for batching
+          #     - name: FixDimensions
 
   # dependent variable
   y:
@@ -77,7 +85,7 @@ transforms:
 
 # set the used language
 #  "multi" for multilingual
-lang: multi # es
+lang: en
 
 # datasets
 dataset_paths: 
@@ -90,10 +98,12 @@ dataset_paths:
     common-voice-de: "/data/stt/data/common-voice/de"
     common-voice-fr: "/data/stt/data/common-voice/fr"
     common-voice-es: "/data/stt/data/common-voice/es"
-    yt-en: "/data/stt/data/yt/en/en/data"
-    yt-de: "/data/stt/data/yt/de/de"
+    common-voice-it: "/data/stt/data/common-voice/it"
+    yt-en: "/data/stt/data/yt/en"
+    yt-de: "/data/stt/data/yt/de"
     yt-fr: "/data/stt/data/yt/fr"
     yt-es: "/data/stt/data/yt/es"
+    yt-it: "/data/stt/data/yt/it"
 
 # selected datasets
 datasets:
@@ -101,10 +111,6 @@ datasets:
     train:
       - common-voice-en
       - yt-en
-        #       - librispeech-0
-        #       - librispeech-1
-        #       - librispeech-2
-        #       - tatoeba-en
     valid:
       - common-voice-en
       # - yt-en
@@ -129,12 +135,19 @@ datasets:
     valid:
       - common-voice-es
       # - yt-es
+  it:
+    train:
+      - common-voice-it
+      - yt-it
+    valid:
+      - common-voice-it
+      # - yt-it
 
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 0.01 # 0.25 # 1.0
-    valid: 1.0  # 1.0
+    train: 1.0  # 0.25 # 1.0
+    valid: 1.0  # 1.0  # 1.0
     test: 1.0
 
 
@@ -171,7 +184,7 @@ tokenizer:
 
 
 ###
-# data limits
+# data
 ###
 
 # apply the following limits
@@ -180,15 +193,24 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 10.0 # 20.0 # 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+almaxs: 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 150 # 350 # 180 # 120 # 80 # 130 # 80 # 60 # 100
+y_max: 180 # 120 # 80 # 130 # 80 # 60 # 100
 y_max_words: 100
 
 # which dataset to use
 suffix: "" # "cat-longy" # "cat-mix" # cat-4
+
+# dataloader settings
+dataloader_args:
+
+  # maximum batch size
+  bs_max: 64 # 32
+
+  # batch size multiplier
+  bs_mul: 2.
 
 
 ###
@@ -219,7 +241,7 @@ cpu:
 ###
 
 model:
-  name: ContrastiveTransducer
+  name: Transducer
   feature_sz: 1280
   embed_sz: 512
   hidden_sz: 1024
@@ -227,18 +249,23 @@ model:
   joint_sz: 1024
   vocab_sz: 2048
   encoder:
+    name: Encoder
     rnn_type: "LSTM"
     num_layers: 6
     dropout: 0.05
-    reduction_factor: 1
+    reduction_factor: 1280 # 1
     reduction_factors: []
-    use_tmp_state_pcent: 0.0 # 0.99
+    layer_norm: false
+    use_tmp_state_pcent: 0.95
   predictor:
+    name: Predictor
     rnn_type: "LSTM"
     num_layers: 2
     dropout: 0.05
-    use_tmp_state_pcent: 0.0 # 0.99
+    layer_norm: false
+    use_tmp_state_pcent: 0.95
   joint:
+    enable: true
     method: "concat"
     dropout: 0.0
   use_tmp_bos: false
@@ -292,15 +319,15 @@ batching:
   batch_size_train: "auto"
 
   # batch size for validation dataset
-  batch_size_valid: 128 # 8 # 32
+  batch_size_valid: 8
 
   # gradient accumulation
   #  (number of batches)
-  accumulate: 1 # 10
+  accumulate: 10
 
 # losses
 loss:
-  type: "contrastive" # "rnnt"
+  type: "rnnt"
 
 # mixed precision training
 mp: false
@@ -322,103 +349,5 @@ num_workers: 7
 # testing
 tensorboard: true
 wandb: false
-tests_per_epoch: 0 # 8
+tests_per_epoch: 8
 
-# language model
-lm:
-  enable: true
-  vocab_sz: 2048
-  embed_sz: 1024
-  hidden_sz: 1024
-  num_layers: 6
-  p: 0.2
-
-
-###
-# inference
-###
-
-overrides:
-  en:
-    lm:
-      path: "./tmp/en/lm.pth"
-      embed_sz: 768
-      hidden_sz: 768
-      num_layers: 4
-      p: 0.3
-    model:
-      encoder:
-        num_layers: 6
-      predictor:
-        num_layers: 2
-      path: "./tmp/en/model.pth"
-    tokenizer:
-      model_file: "./tmp/en/tokenizer.yttm-model"
-  de:
-    lm:
-      path: "./tmp/de/lm.pth"
-      embed_sz: 768
-      hidden_sz: 768
-      num_layers: 4
-      p: 0.3
-    model:
-      encoder:
-        num_layers: 6
-      predictor:
-        num_layers: 2
-      path:
-      - "./tmp/de/encoder.pth"
-      - "./tmp/de/predictor.pth"
-      - "./tmp/de/joint.pth"
-    quantized: true
-    tokenizer:
-      model_file: "./tmp/de/tokenizer.yttm-model"
-  inference:
-    transforms:
-      x:
-        # to target sr + single channel
-        - name: Resample
-        - name: ChannelCut
-
-        # to spectrogram
-        - name: TransformTime
-
-        - name: StackDownsample
-          partial: true
-          args:
-            downsample: 8
-            n_stack: 10
-    
-        # add last dimension
-        - name: FixDimensions
-
-      stream:
-        - name: Resample
-        - name: ChannelCut
-          # - name: StreamPreprocess
-        - name: TransformTime
-        - name: StreamPostprocess
-          partial: true
-          args:
-            n_stack: 10
-        - name: StackDownsample
-          partial: true
-          args:
-            downsample: 8
-            n_stack: 10
-        - name: FixDimensions
-        - name: Buffer
-          partial: true
-          args:
-            n_buffer: 2
-    
-      y:
-        - name: MyOpenLabel
-        - name: MyNumericalize
-        - name: AddLen
-    bs: 1
-    cuda:
-      enable: false
-      device: "cpu"
-    # 10ms -> 160
-    chunk: 160
