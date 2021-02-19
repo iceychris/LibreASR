@@ -119,7 +119,8 @@ class DynamicBucketingDL(TfmdDL):
         sort_func=None,
         res=None,
         reverse=True,
-        mul_bs=1.0,
+        bs_max=32,
+        bs_mul=1.0,
         **kwargs,
     ):
         """

@@ -132,8 +132,11 @@ def noop(x=None, *args, **kwargs):
     return x
 
 
-class noop1:
-    def __call__(self, *args, **kwargs):
+class Noop(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(Noop, self).__init__()
+
+    def forward(self, *args, **kwargs):
         if len(args) == 1:
             return args[0]
         return args

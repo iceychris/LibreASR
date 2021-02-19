@@ -101,6 +101,7 @@ class Encoder(Module):
         trace=True,
         device="cuda:0",
         rnn_type="LSTM",
+        norm="bn",
         use_tmp_state_pcent=0.9,
         **kwargs,
     ):
@@ -115,7 +116,7 @@ class Encoder(Module):
             reduction_factors=[],  # 2
             rezero=False,
             utsp=use_tmp_state_pcent,
-            norm="bn",
+            norm=norm,
         )
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
@@ -147,7 +148,8 @@ class Predictor(Module):
         dropout=0.01,
         num_layers=2,
         blank=0,
-        rnn_type="NBRC",
+        rnn_type="LSTM",
+        norm="bn",
         use_tmp_state_pcent=0.9,
         **kwargs,
     ):
@@ -165,7 +167,7 @@ class Predictor(Module):
             rnn_type=rnn_type,
             rezero=False,
             utsp=use_tmp_state_pcent,
-            norm="bn",
+            norm=norm,
         )
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
@@ -308,7 +310,7 @@ class Transducer(Module):
         device="cpu",
         **kwargs,
     ):
-        self.preprocessor = Preprocessor() if learnable_stft else noop1()
+        self.preprocessor = Preprocessor() if learnable_stft else Noop()
         self.encoder = eval(encoder_kwargs["name"])(
             feature_sz,
             hidden_sz=hidden_sz,
@@ -336,6 +338,7 @@ class Transducer(Module):
         self.hidden_sz = hidden_sz
         self.device = device
         self.lm = None
+        self.learnable_stft = learnable_stft
 
     @staticmethod
     def from_config(conf, lang, lm=None, cls=None):
@@ -360,6 +363,7 @@ class Transducer(Module):
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
             joint=conf["model"]["joint"]["enable"],
+            learnable_stft=conf["model"]["learnable_stft"],
             device=conf["cuda"]["device"],
             **conf["model"].get("extra", {}),
         ).to(conf["cuda"]["device"])
@@ -969,7 +973,6 @@ class ContrastiveTransducer(Transducer):
         hidden_sz=1024,
         cache_sz=128,
         modalities=2,
-        learnable_stft=False,
         **kwargs,
     ):
         a, b = hidden_sz, hidden_sz
@@ -978,9 +981,7 @@ class ContrastiveTransducer(Transducer):
         self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
         self.cache_sz = cache_sz
         self.modalities = modalities
-        self.learnable_stft = learnable_stft
         self.cache = [[] for _ in range(modalities)]
-        self.preprocessor = Preprocessor() if learnable_stft else noop1()
         super().__init__(*args, **kwargs)
 
     @staticmethod

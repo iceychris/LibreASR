@@ -84,7 +84,8 @@ class StackedRNN(nn.Module):
         self.cache = {}
 
         # norm (BN or LN)
-        norm_cls = nn.BatchNorm1d if norm == "bn" else nn.LayerNorm1d
+        self.norm = norm
+        norm_cls = nn.BatchNorm1d if norm == "bn" else nn.LayerNorm
         self.bns = nn.ModuleList()
         for i, o in zip(self._is, self._os):
             n = norm_cls(o)
@@ -182,9 +183,12 @@ class StackedRNN(nn.Module):
             )
 
             # apply norm
-            x = x.permute(0, 2, 1)
-            x = self.bns[i](x)
-            x = x.permute(0, 2, 1)
+            if self.norm == "bn":
+                x = x.permute(0, 2, 1)
+                x = self.bns[i](x)
+                x = x.permute(0, 2, 1)
+            else:
+                x = self.bns[i](x)
 
             # apply residual
             if self.rezero:
