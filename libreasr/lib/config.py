@@ -110,7 +110,7 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         overrides.append(["overrides", "inference"])
     lang = kwargs.get("lang", "")
     lang_name = lang
-    if len(lang) > 0:
+    if lang is not None and len(lang) > 0:
         overrides.append(["overrides", "languages", lang])
     conf = apply_overrides(conf, overrides)
 

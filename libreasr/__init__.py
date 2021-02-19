@@ -9,7 +9,7 @@ from libreasr.lib.instance import LibreASRTraining, LibreASRInference
 
 
 class LibreASR:
-    def __init__(self, lang, config_path=DEFAULT_CONFIG_PATH):
+    def __init__(self, lang=None, config_path=DEFAULT_CONFIG_PATH):
         """
         Create a new LibreASR instace for a specific language
         """
