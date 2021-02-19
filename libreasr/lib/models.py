@@ -473,6 +473,9 @@ class Transducer(Module):
         if self.mp:
             x = x.half()
 
+        # preprocess
+        x, xl = self.preprocessor(x, xl)
+
         # encoder
         x = x.reshape(x.size(0), x.size(1), -1)
         encoder_out = self.encoder(x, lengths=xl)
@@ -1029,7 +1032,7 @@ class ContrastiveTransducer(Transducer):
         if self.mp:
             x = x.half()
 
-        # preprocess signal
+        # preprocess
         x, xl = self.preprocessor(x, xl)
 
         # [N, T, H, W] -> [N, T, H]

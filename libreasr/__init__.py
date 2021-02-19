@@ -4,18 +4,17 @@ LibreASR source code
 import gc
 
 from libreasr.lib.defaults import DEFAULT_CONFIG_PATH
-from libreasr.lib.inference.utils import load_config
+from libreasr.lib.inference.utils import load_config, get_available_models
 from libreasr.lib.instance import LibreASRTraining, LibreASRInference
 
 
 class LibreASR:
-    def __init__(self, lang=None, config_path=DEFAULT_CONFIG_PATH):
+    def __init__(self, lang=None, config_path=None):
         """
         Create a new LibreASR instace for a specific language
         """
         self.lang = lang
         self.config_path = config_path
-        self.conf = load_config(config_path, lang)
         self.inst = None
         self.mode = None
 
@@ -82,3 +81,10 @@ class LibreASR:
         Run the LibreASR API-Server
         """
         pass
+
+    def get_grpc_port(self):
+        assert self.mode is not None
+        return self.inst.conf.get("grpc_port")
+
+    def available_models(self):
+        return get_available_models()

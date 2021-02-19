@@ -16,6 +16,10 @@ class LibreASRInstance:
         kwargs.update(self.conf.get("hypers", {}).get("tuned", {}))
 
         # transcribe
+        only_one = False
+        if not isinstance(sth, (list, tuple)):
+            sth = [sth]
+            only_one = True
         transcripts = []
         if batch:
             res = self._transcribe_batches(sth, **kwargs)
@@ -24,6 +28,8 @@ class LibreASRInstance:
             for obj in sth:
                 res = self._transcribe_one(obj, **kwargs)
                 transcripts.append(res)
+        if only_one:
+            return transcripts[0]
         return transcripts
 
     def stream(self, sth, **kwargs):

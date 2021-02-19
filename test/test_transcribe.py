@@ -26,7 +26,7 @@ class TestTranscribe(unittest.TestCase):
     """
 
     def setUp(self):
-        self.l = LibreASR("de", config_path="./config/deploy.yaml")
+        self.l = LibreASR("de")
         self.l.load_inference()
 
     def test_unbatched(self):

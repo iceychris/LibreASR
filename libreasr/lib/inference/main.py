@@ -11,7 +11,7 @@ from libreasr.lib.inference.imports import *
 # - Learner
 
 
-def load_stuff(lang, config_path="./config/testing.yaml"):
+def load_stuff(lang, config_path=None):
 
     # use more threads for PyTorch
     torch.set_num_threads(2)
