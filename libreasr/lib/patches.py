@@ -46,7 +46,10 @@ def test(
         self.model.float()
     dl.shuffle = False
 
-    bs = 8
+    if hasattr(dl, "bs"):
+        bs = dl.bs
+    else:
+        bs = 8
     n_batches = dl.n // bs
     min_batches = min_samples // bs
     _for = min(min_batches, int(n_batches * pcent) + 1)

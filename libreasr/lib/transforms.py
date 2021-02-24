@@ -71,6 +71,7 @@ class OpenAudioSpan(Transform):
     def encodes(self, i) -> AudioTensor:
         tpl = self.tpls[i]
         fname = TupleGetter.file(tpl)
+        # print(fname)
 
         sr = 16000
         sr_csv = TupleGetter.sr(tpl)

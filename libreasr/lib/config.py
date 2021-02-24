@@ -158,8 +158,8 @@ def parse_and_apply_config(
         # check_db(db)
 
     # grab params
-    model_qpre = conf["quantization"]["model"].get("pre", False)
-    model_qpost = conf["quantization"]["model"].get("post", False)
+    model_qpre = conf.get("quantization", {}).get("model", {}).get("pre", False)
+    model_qpost = conf.get("quantization", {}).get("model", {}).get("post", False)
     model_path_to_load = "q" if model_qpre else "n"
     model_path = conf.get("model", {}).get("path", {}).get(model_path_to_load, "")
     if isinstance(model_path, list):
@@ -168,8 +168,8 @@ def parse_and_apply_config(
         model_path = os.path.expanduser(model_path)
     model_args = (model_qpre, model_qpost, model_path)
     model_do_load = conf["model"].get("load", False)
-    lm_qpre = conf["quantization"]["lm"].get("pre", False)
-    lm_qpost = conf["quantization"]["lm"].get("post", False)
+    lm_qpre = conf.get("quantization", {}).get("lm", {}).get("pre", False)
+    lm_qpost = conf.get("quantization", {}).get("lm", {}).get("post", False)
     lm_path_to_load = "q" if lm_qpre else "n"
     lm_path = os.path.expanduser(
         conf.get("lm", {}).get("path", {}).get(lm_path_to_load, "")

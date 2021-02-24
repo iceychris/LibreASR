@@ -69,7 +69,6 @@ def transcribe_stream(
     # inference
     outputs = model.transcribe_stream(stream_fn(), lang.denumericalize, **kwargs)
     last = ""
-    last_diff = ""
     steps = 0
     for i, (y, y_one, reset_fn) in enumerate(outputs):
         steps += 1
@@ -77,10 +76,6 @@ def transcribe_stream(
             now = lang.denumericalize(y)
             diff = "".join(y for x, y in itertools.zip_longest(last, now) if x != y)
             last = now
-            # bail if we just output the same thing twice
-            if diff == last_diff:
-                continue
-            last_diff = diff
             yield (diff, now)
         elif should_reset(
             steps,

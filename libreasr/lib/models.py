@@ -362,7 +362,7 @@ class Transducer(Module):
             use_tmp_bos_pcent=conf["model"]["use_tmp_bos_pcent"],
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
-            joint=conf["model"]["joint"]["enable"],
+            joint=conf["model"]["joint"].get("enable", True),
             learnable_stft=conf["model"]["learnable_stft"],
             device=conf["cuda"]["device"],
             **conf["model"].get("extra", {}),
@@ -979,7 +979,9 @@ class ContrastiveTransducer(Transducer):
         **kwargs,
     ):
         a, b = hidden_sz, hidden_sz
-        self.latents = nn.ModuleList([nn.Linear(a, b) for _ in range(modalities)])
+        self.latents = nn.ModuleList(
+            [nn.Linear(a, b, bias=False) for _ in range(modalities)]
+        )
         temps = 1 if modalities == 2 else 3
         self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
         self.cache_sz = cache_sz
@@ -1176,8 +1178,9 @@ class ContrastiveTransducer(Transducer):
             loss = torch.zeros((1,), device=x.device)
             count = 0.0
             for sim in (sim1, sim2, sim3):
-                loss += F.cross_entropy(sim, labels)
-                loss += F.cross_entropy(sim.T, labels)
+                l1, l2 = F.cross_entropy(sim, labels), F.cross_entropy(sim.T, labels)
+                loss += l1 + l2
+                print("loss", l1 + l2)
                 count += 2
             return loss / count
 
