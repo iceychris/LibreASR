@@ -8,7 +8,7 @@ from IPython.core.debugger import set_trace
 
 import torch
 
-from fastai2.learner import load_model
+from fastai.learner import load_model
 
 from libreasr.lib.quantization import load_quantized_model, try_quantize, quantize_model
 

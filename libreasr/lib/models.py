@@ -2,6 +2,7 @@ import operator
 import time
 import random
 from queue import PriorityQueue
+from functools import partial
 
 import torch
 from torch import nn, einsum
@@ -9,10 +10,10 @@ import torch.nn.functional as F
 
 import numpy as np
 
-from fastai2.vision.models.xresnet import xresnet18
-from fastai2.layers import Debugger, ResBlock
-from fastai2.torch_core import Module
-from fastai2.learner import CancelBatchException
+from fastai.vision.models.xresnet import xresnet18
+from fastai.layers import Debugger, ResBlock
+from fastai.torch_core import Module
+from fastai.learner import CancelBatchException
 
 from IPython.core.debugger import set_trace
 
@@ -284,6 +285,30 @@ def get_model(conf, *args, **kwargs):
     return eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
 
 
+class RNNTLoss(Module):
+    def __init__(self, reduction=1.0, zero_nan=False):
+        from warp_rnnt import rnnt_loss
+
+        self.loss = partial(rnnt_loss, average_frames=False)
+        self.reduction = reduction
+        self.zero_nan = zero_nan
+
+    def forward(self, x, y, xl, yl):
+        # trim lens
+        xl = torch.clamp(xl // self.reduction, min=1, max=x.size(1))
+
+        # fix types
+        y = y.type(torch.int32)
+        xl = xl.type(torch.int32)
+        yl = yl.type(torch.int32)
+
+        # avoid NaN
+        if self.zero_nan:
+            x = torch.where(torch.isnan(x), torch.zeros_like(x), x)
+
+        return self.loss(x, y, xl, yl)
+
+
 class Transducer(Module):
     def __init__(
         self,
@@ -306,8 +331,10 @@ class Transducer(Module):
         encoder_kwargs={},
         predictor_kwargs={},
         joint=True,
+        joint_reversible=False,
         learnable_stft=False,
         device="cpu",
+        loss=False,
         **kwargs,
     ):
         self.preprocessor = Preprocessor() if learnable_stft else Noop()
@@ -325,12 +352,13 @@ class Transducer(Module):
             **predictor_kwargs,
         )
         if joint:
-            self.joint = Joint(out_sz, joint_sz, vocab_sz, joint_method)
+            self.joint = Joint(
+                out_sz, joint_sz, vocab_sz, joint_method, reversible=joint_reversible
+            )
         self.lang = lang
         self.blank = blank
         # TODO: dont hardcode
         self.bos = 2
-        self.mp = False
         self.bos_cache = {}
         self.use_tmp_bos = use_tmp_bos
         self.use_tmp_bos_pcent = use_tmp_bos_pcent
@@ -339,6 +367,10 @@ class Transducer(Module):
         self.device = device
         self.lm = None
         self.learnable_stft = learnable_stft
+        if loss:
+            self.loss = RNNTLoss()
+        else:
+            self.loss = None
 
     @staticmethod
     def from_config(conf, lang, lm=None, cls=None):
@@ -363,10 +395,12 @@ class Transducer(Module):
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
             joint=conf["model"]["joint"]["enable"],
+            joint_reversible=conf["model"]["joint"]["reversible"],
             learnable_stft=conf["model"]["learnable_stft"],
             device=conf["cuda"]["device"],
+            loss=conf["model"].get("loss", False),
             **conf["model"].get("extra", {}),
-        ).to(conf["cuda"]["device"])
+        )  # .to(conf["cuda"]["device"])
         m.mp = conf.get("mp", False)
         return m
 
@@ -402,7 +436,7 @@ class Transducer(Module):
         bos = bos.fill_(self.bos)
         return bos
 
-    def forward(self, tpl, softmax=True):
+    def forward(self, tpl, softmax=True, return_logits=False):
         """
         (x, y)
         x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
@@ -411,8 +445,6 @@ class Transducer(Module):
 
         # unpack
         x, y, xl, yl = tpl
-        if self.mp:
-            x = x.half()
 
         # preprocess
         x, xl = self.preprocessor(x, xl)
@@ -446,8 +478,12 @@ class Transducer(Module):
 
         # joint & project
         joint_out = self.joint(predictor_out, encoder_out, softmax=softmax, log=True)
+        if self.loss is None or return_logits:
+            return joint_out
 
-        return joint_out
+        # calc loss
+        loss = self.loss(joint_out, y, xl, yl)
+        return loss
 
     def transcribe_batch(
         self,
@@ -470,8 +506,6 @@ class Transducer(Module):
                 x, xl = tpl
         else:
             x, xl = tpl, None
-        if self.mp:
-            x = x.half()
 
         # encoder
         x = x.reshape(x.size(0), x.size(1), -1)
@@ -884,6 +918,24 @@ class Transducer(Module):
             yield y, denumericalizer(y_seq), reset
 
 
+class Dummy(Module):
+    def __init__(self, *args, **kwargs):
+        self.mod = nn.Linear(1280, 20)
+
+    @staticmethod
+    def from_config(*args, **kwargs):
+        return Dummy(root=True)
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, tpl, **kwargs):
+        x = tpl[0]
+        x = self.mod(x[:, :, :, 0])
+        # print("dummy forward x", x.shape, x.device)
+        return (x ** 2).mean()
+
+
 class NoisyStudent(Module):
     def __init__(self, teacher, student):
         self.teacher, self.student = [teacher], student
@@ -942,7 +994,7 @@ def masked_mean(t, mask, dim=1, thresh=0.05, random=False):
     return t.sum(dim=1) / mask.sum(dim=1)[..., None]
 
 
-def crop(x, xl, size=30, seq=1, random=False):
+def crop(x, xl, size=2 * 16000, seq=1, random=False):
     N = x.size(0)
 
     # choose bounds
@@ -976,7 +1028,9 @@ class ContrastiveTransducer(Transducer):
         **kwargs,
     ):
         a, b = hidden_sz, hidden_sz
-        self.latents = nn.ModuleList([nn.Linear(a, b) for _ in range(modalities)])
+        self.latents = nn.ModuleList(
+            [nn.Linear(a, b, bias=False) for _ in range(modalities)]
+        )
         temps = 1 if modalities == 2 else 3
         self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
         self.cache_sz = cache_sz
@@ -994,8 +1048,8 @@ class ContrastiveTransducer(Transducer):
             [
                 self.temperature,
                 *[l.weight for l in self.latents],
-                *self.preprocessor.param_groups(),
             ],
+            self.preprocessor.param_groups(),
             self.encoder.param_groups(),
             self.predictor.param_groups(),
         ]
@@ -1026,16 +1080,14 @@ class ContrastiveTransducer(Transducer):
 
         # unpack
         x, y, xl, yl = tpl
-        if self.mp:
-            x = x.half()
-
-        # preprocess signal
-        x, xl = self.preprocessor(x, xl)
-
-        # [N, T, H, W] -> [N, T, H]
-        x = x.reshape(x.size(0), x.size(1), -1)
 
         if self.modalities == 2:
+
+            # preprocess signal
+            x, xl = self.preprocessor(x, xl)
+
+            # [N, T, H, W] -> [N, T, H]
+            x = x.reshape(x.size(0), x.size(1), -1)
 
             # encoder
             encoder_out = self.encoder(x, lengths=xl)
@@ -1101,6 +1153,14 @@ class ContrastiveTransducer(Transducer):
             # compute two crops
             x1, xl1 = crop(x, xl, seq=1, random=self.training)
             x2, xl2 = crop(x, xl, seq=2, random=self.training)
+
+            # preprocess signal
+            x1, xl1 = self.preprocessor(x1, xl1)
+            x2, xl2 = self.preprocessor(x2, xl2)
+
+            # [N, T, H, W] -> [N, T, H]
+            x1 = x1.reshape(x1.size(0), x1.size(1), -1)
+            x2 = x2.reshape(x2.size(0), x2.size(1), -1)
 
             # encode
             a = self.encoder(x1, lengths=xl1)

@@ -5,76 +5,78 @@
 transforms:        
 
   # independent variable
-  x:
+  x-stft:
     - name: MyOpenAudio
-
+ 
     # bounds
     - name: PadderCutter
-
+ 
     # prepare for batching
     - name: FixRawAudio
 
-          #     - name: MyOpenAudio
-          #     - name: ChannelCut
-          # 
-          #     # resampling
-          #     - name: Resample
-          # 
-          #     # augmentation
-          #     - name: ResamplePoly
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         delta: 10
-          #     - name: ChangeVolume
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         pcent: 0.03
-          #     - name: MyAddNoise
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         noise_level: 0.05
-          #         color: 0
-          #     - name: MySignalShifter
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         max_time: 0.1
-          #         direction: 1
-          #     - name: PadderCutter
-          #     - name: TransformTime
-          #     - name: MyCutFrames
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         max_front: 1
-          #         max_back: 1
-          #     - name: MyMaskTime
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         num_masks: 2
-          #         size: 4
-          #     - name: MyMaskFreq
-          #       wrap: true
-          #       partial: true
-          #       args:
-          #         num_masks: 4
-          #         size: 4
-          # 
-          #     # reduce time dimension
-          #     #  by downsample
-          #     # and stack
-          #     - name: StackDownsample
-          #       partial: true
-          #       args:
-          #         downsample: 8
-          #         n_stack: 10
-          # 
-          #     # make data ready for batching
-          #     - name: FixDimensions
+  # independent variable
+  x-no-stft:
+    - name: MyOpenAudio
+    # - name: ChannelCut
+
+    # # resampling
+    # - name: Resample
+
+    # # augmentation
+    # - name: ResamplePoly
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     delta: 10
+    # - name: ChangeVolume
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     pcent: 0.03
+    # - name: MyAddNoise
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     noise_level: 0.05
+    #     color: 0
+    # - name: MySignalShifter
+    #   wrap: true
+    #   partial: true
+    #   args:
+    #     max_time: 0.1
+    #     direction: 1
+    # - name: PadderCutter
+    - name: TransformTime
+    - name: MyCutFrames
+      wrap: true
+      partial: true
+      args:
+        max_front: 1
+        max_back: 1
+    - name: MyMaskTime
+      wrap: true
+      partial: true
+      args:
+        num_masks: 2
+        size: 4
+    - name: MyMaskFreq
+      wrap: true
+      partial: true
+      args:
+        num_masks: 4
+        size: 4
+
+    # reduce time dimension
+    #  by downsample
+    # and stack
+    - name: StackDownsample
+      partial: true
+      args:
+        downsample: 8
+        n_stack: 10
+
+    # make data ready for batching
+    - name: FixDimensions
 
   # dependent variable
   y:
@@ -146,8 +148,8 @@ datasets:
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 1.0  # 0.25 # 1.0
-    valid: 1.0  # 1.0  # 1.0
+    train: 0.05  # 1.0  # 0.25 # 1.0
+    valid: 0.01  # 1.0  # 1.0  # 1.0
     test: 1.0
 
 
@@ -193,24 +195,30 @@ apply_limits: True
 
 # audio length [seconds]
 almins: 0.5
-almaxs: 10.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+almaxs: 15.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 180 # 120 # 80 # 130 # 80 # 60 # 100
+y_max: 250 # 120 # 80 # 130 # 80 # 60 # 100
 y_max_words: 100
 
 # which dataset to use
-suffix: "" # "cat-longy" # "cat-mix" # cat-4
+suffix: "" # "cat-2468-b" # "cat-longy" # "cat-mix" # cat-4
 
 # dataloader settings
 dataloader_args:
 
   # maximum batch size
-  bs_max: 64 # 32
+  bs_max: 64 # 128 # 64 # 32
 
   # batch size multiplier
-  bs_mul: 2.
+  bs_mul: 2. # 4. # 2. # 1.
+
+  # prng save state path
+  prng_state_path: "/home/chris"
+
+  # debugging
+  debug: false
 
 
 ###
@@ -252,25 +260,27 @@ model:
     name: Encoder
     rnn_type: "LSTM"
     num_layers: 6
+    norm: "ln"
     dropout: 0.05
-    reduction_factor: 1280 # 1
+    reduction_factor: 1
     reduction_factors: []
-    layer_norm: false
-    use_tmp_state_pcent: 0.95
+    use_tmp_state_pcent: 0.0 # 0.95
   predictor:
     name: Predictor
     rnn_type: "LSTM"
     num_layers: 2
+    norm: "ln"
     dropout: 0.05
-    layer_norm: false
-    use_tmp_state_pcent: 0.95
+    use_tmp_state_pcent: 0.0 # 0.95
   joint:
     enable: true
     method: "concat"
+    reversible: false # true
     dropout: 0.0
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
-quantized: false
+  learnable_stft: false
+  loss: true
 
 
 ###
@@ -306,6 +316,15 @@ training:
   #  (a variant of knowledge distillation)
   noisystudent: false
 
+  # NativeMixedPrecision training
+  mp:
+    enable: true
+
+  # DistributedDataParallel
+  #  (muli-gpu and/or multi-host training)
+  ddp:
+    enable: true
+
 
 ###
 # other
@@ -323,15 +342,13 @@ batching:
 
   # gradient accumulation
   #  (number of batches)
-  accumulate: 10
+  #  (regular training: 10)
+  #  (DP training: 5)
+  accumulate: 10 # 5
 
 # losses
 loss:
   type: "rnnt"
-
-# mixed precision training
-mp: false
-mp_clip: 2.
 
 ## tokenization
 # for training a tokenizer on the current corpus
@@ -344,10 +361,30 @@ seed: 42
 
 # CPU workers
 #  3 -> fine for rnnt
-num_workers: 7
+num_workers: 4 # 6 # 7
 
 # testing
 tensorboard: true
 wandb: false
 tests_per_epoch: 8
 
+# eval speech model kwargs
+espm_kwargs:
+  pcent: 1.0
+  min_samples: 800
+  save_best: true
+  save_with_opt: true
+  save_multiple: false
+
+# q
+quantization:
+  engine: "fbgemm" # "qnnpack" or "fbgemm"
+  model:
+    pre: false
+    post: false
+  lm:
+    pre: false
+    post: false
+
+lm:
+  enable: false

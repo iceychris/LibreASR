@@ -7,30 +7,17 @@ import random
 from pathlib import Path
 from typing import Tuple
 
-# fastai v2 stuff
-from fastai2.torch_basics import *
-from fastai2.layers import *
-from fastai2.data.all import *
-from fastai2.optimizer import *
-from fastai2.learner import *
-from fastai2.metrics import *
-from fastai2.text.core import *
-from fastai2.text.data import *
-from fastai2.text.models.core import *
-from fastai2.text.models.awdlstm import *
-from fastai2.text.learner import *
-from fastai2.callback.rnn import *
-from fastai2.callback.all import *
-from fastai2.vision.learner import *
-from fastai2.vision.models.xresnet import *
+import pandas as pd
+import numpy as np
 
-from fastai2_audio.core import *
-
+from torch import FloatTensor, LongTensor
 import torchaudio
 import tqdm
 
-import pandas as pd
-import numpy as np
+from fastcore.meta import delegates
+from fastai.data.all import *
+from fastai.data.core import TfmdDL
+from fastai.torch_core import rank_distrib
 
 from libreasr.lib.utils import *
 from libreasr.lib.transforms import update_tfms, update_tfms_multi
@@ -54,9 +41,6 @@ DL_ADVANCE_BY_BUCKETING = 4000
 
 # debugging
 PRINT_BATCH_STATS = False
-
-# rng issues
-HOME = "/home/chris"
 
 
 @delegates(TfmdDL)
@@ -107,7 +91,7 @@ class SortishDL(TfmdDL):
             if len(batches) == 1
             else (batches[0], sort_idx, batches[-1])
         )
-        return iter(sort_idx)
+        return sort_idx
 
 
 @delegates(TfmdDL)
@@ -121,6 +105,11 @@ class DynamicBucketingDL(TfmdDL):
         reverse=True,
         bs_max=32,
         bs_mul=1.0,
+        pad_minus_one=False,
+        use_saved_prng=True,
+        prng_state_path="/home/chris",
+        rank=0,
+        debug=False,
         **kwargs,
     ):
         """
@@ -138,6 +127,11 @@ class DynamicBucketingDL(TfmdDL):
         self.tpls = tpls
         self.bs_max = bs_max
         self.bs_mul = bs_mul
+        self.pad_minus_one = pad_minus_one
+        self.use_saved_prng = use_saved_prng
+        self.prng_state_path = prng_state_path
+        self.rank = rank
+        self.debug = debug
 
     def get_idxs(self):
         idxs = super().get_idxs()
@@ -152,10 +146,11 @@ class DynamicBucketingDL(TfmdDL):
 
     def shuffle_fn(self, idxs):
         nprng = np.random.default_rng(42)
-        if torch.utils.data.get_worker_info() is not None:
+        seed_path = f"{self.prng_state_path}/rng-rank-{self.rank}"
+        if self.use_saved_prng:
             # try load rng state
             try:
-                with open(f"{HOME}/rng-{self.offs}", "rb") as f:
+                with open(seed_path, "rb") as f:
                     seed = pickle.load(f)
                     nprng = np.random.default_rng(seed)
             except Exception as e:
@@ -170,11 +165,14 @@ class DynamicBucketingDL(TfmdDL):
         chunks = [sorted(s, key=lambda i: self.res[i], reverse=True) for s in chunks]
 
         # variable batch bucketing
+        bs_mul = self.bs_mul
+        bs_max = self.bs_max
+
         def is_adding_one_okay(xlen, ylen, xmax, ymax, bs):
-            xmaxok = xlen <= X_MAX * self.bs_mul
-            ymaxok = ylen <= Y_MAX * self.bs_mul
-            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE * self.bs_mul
-            bsok = bs <= self.bs_max
+            xmaxok = xlen <= X_MAX * bs_mul
+            ymaxok = ylen <= Y_MAX * bs_mul
+            multok = bs * xmax * ymax <= X_MAX * Y_MAX_ONE * bs_mul
+            bsok = bs <= bs_max
             return xmaxok and ymaxok and multok and bsok
 
         batches = []
@@ -193,7 +191,6 @@ class DynamicBucketingDL(TfmdDL):
                     ymax = max(ymax, y)
                     xlen += x
                     ylen += y
-                    # print("+", one)
                     batch.append(one)
                 else:
                     if len(batch) > 0:
@@ -202,7 +199,6 @@ class DynamicBucketingDL(TfmdDL):
                     ymax = y
                     xlen = x
                     ylen = y
-                    # print("+", one)
                     batch = [one]
         if len(batch) > 0:
             batches.append(batch)
@@ -221,12 +217,22 @@ class DynamicBucketingDL(TfmdDL):
         self._l = len(batches)
 
         # save rng state
-        if torch.utils.data.get_worker_info() is not None:
+        if self.use_saved_prng:
             seed = nprng.integers(0, 2 ** 32 - 1)
-            with open(f"{HOME}/rng-{self.offs}", "wb") as f:
+            with open(seed_path, "wb") as f:
                 pickle.dump(seed, f)
 
-        return iter(batches)
+        # pad with -1s
+        if self.pad_minus_one:
+            dist_batches = []
+            m = max([len(x) for x in batches])
+            for b in batches:
+                dist_batches.append([*b, *([-1] * (m - len(b)))])
+            batches = dist_batches
+
+        if self.debug:
+            print(self.rank, batches)
+        return batches
 
 
 def pad_collate_float(
@@ -332,6 +338,7 @@ def grab_asr_databunch(
     pad_collate_float_args={},
     bs_valid=8,
     after_batch=[],
+    ddp=False,
     splitter=partial(RandomSplitter, seed=42),
     name="unknown_asr_dataset",
 ) -> DataLoaders:
@@ -371,6 +378,9 @@ def grab_asr_databunch(
     )
     sorted_dl_args_train = sorted_dl_args.copy()
     sorted_dl_args_train["tpls"] = tpls_train
+    if ddp:
+        sorted_dl_args_train["pad_minus_one"] = True
+        sorted_dl_args_train["rank"] = rank_distrib()
 
     sorted_dl_args_valid = sorted_dl_args.copy()
     sorted_dl_args_valid["bs"] = bs_valid
@@ -566,5 +576,6 @@ class ASRDatabunch:
             pad_collate_float_args,
             bs_valid=conf["batching"]["batch_size_valid"],
             after_batch=after_batch,
+            ddp=conf.get("training", {}).get("ddp", {}).get("enable", False),
         )
         return db

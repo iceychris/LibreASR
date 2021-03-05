@@ -1,8 +1,6 @@
-train:
-	for number in $(shell seq 1 1000); do \
-            ipython3 libreasr.ipynb || true ; \
-	done
-
+###
+# Nix
+###
 
 nix: shell
 shell:
@@ -11,6 +9,7 @@ shell:
 f: format
 format:
 	black .
+
 
 
 ###
@@ -124,3 +123,24 @@ clean:
 	rm -rf ~/rng-*
 	rm -rf ./models/model.pth
 
+post-install:
+	sudo /opt/conda/bin/pip3 install -U -r ./docker/requirements-post.txt
+
+
+
+###
+# training & ddp
+###
+
+train:
+	ipython3 libreasr.ipynb
+
+distrib:
+	CUDA_VISIBLE_DEVICES=0,1 python3 -m libreasr.launch libreasr.ipynb
+
+distrib-debug:
+	NCCL_DEBUG=info CUDA_VISIBLE_DEVICES=0,1 python3 -m libreasr.launch libreasr.ipynb
+
+kill: distrib-kill
+distrib-kill:
+	(ps aux | grep "libreasr.ipynb" | grep -v grep | awk '{print $$2}' | xargs kill) || true

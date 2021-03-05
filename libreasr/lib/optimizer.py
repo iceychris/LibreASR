@@ -3,9 +3,8 @@ from functools import partial
 import torch
 from torch.optim.optimizer import Optimizer
 
-from fastai2.optimizer import *
-from fastai2.torch_basics import *
-from fastcore.utils import log_args
+from fastai.optimizer import *
+from fastai.torch_basics import *
 
 
 def average_sqr_diag_hessian(
@@ -48,7 +47,7 @@ def adahessian_step(
     return p
 
 
-@log_args(to_return=True, but_as=Optimizer.__init__)
+# @log_args(to_return=True, but_as=Optimizer.__init__)
 def AdaHessian(
     params,
     lr=0.1,
@@ -259,7 +258,7 @@ def radam_adabelief_step(
 radam_adabelief_step._defaults = dict(eps=1e-5)
 
 
-@log_args(to_return=True, but_as=Optimizer.__init__)
+# @log_args(to_return=True, but_as=Optimizer.__init__)
 def RAdamAdabelief(
     params, lr, mom=0.9, sqr_mom=0.99, eps=1e-5, wd=0.0, beta=0.0, decouple_wd=True
 ):

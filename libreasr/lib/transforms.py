@@ -6,25 +6,25 @@ import os
 from typing import Tuple
 
 # fastai v2 stuff
-from fastai2.torch_basics import *
-from fastai2.layers import *
-from fastai2.data.all import *
-from fastai2.optimizer import *
-from fastai2.learner import *
-from fastai2.metrics import *
-from fastai2.text.core import *
-from fastai2.text.data import *
-from fastai2.text.models.core import *
-from fastai2.text.models.awdlstm import *
-from fastai2.text.learner import *
-from fastai2.callback.rnn import *
-from fastai2.callback.all import *
-from fastai2.vision.learner import *
-from fastai2.vision.models.xresnet import *
+from fastai.torch_basics import *
+from fastai.layers import *
+from fastai.data.all import *
+from fastai.optimizer import *
+from fastai.learner import *
+from fastai.metrics import *
+from fastai.text.core import *
+from fastai.text.data import *
+from fastai.text.models.core import *
+from fastai.text.models.awdlstm import *
+from fastai.text.learner import *
+from fastai.callback.rnn import *
+from fastai.callback.all import *
+from fastai.vision.learner import *
+from fastai.vision.models.xresnet import *
 from fastcore.transform import _TfmMeta
 
-from fastai2_audio.core.signal import *
-from fastai2_audio.augment.signal import SignalShifter, AddNoise
+from fastaudio.core.signal import *
+from fastaudio.augment.signal import SignalShifter, AddNoise
 
 import pandas as pd
 import numpy as np
@@ -61,7 +61,7 @@ def debug(self, inp=None):
 
 
 # use sox_io as default backend
-torchaudio.set_audio_backend("sox_io")
+torchaudio.set_audio_backend("soundfile")
 
 
 class OpenAudioSpan(Transform):
@@ -354,8 +354,6 @@ class TransformTime(Transform):
             **melkwargs,
             **mfcc_args,
         )
-        self.delta_op = torchaudio.transforms.ComputeDeltas(delta_win_length)
-        self.deltas = deltas
         self.next_n = n_forward_frames
         self.use_extra_features = use_extra_features
         self.log_mels = log_mels
@@ -365,20 +363,15 @@ class TransformTime(Transform):
         # returns [C, T, H]
         sig = ai.data
 
-        # use mfcc & compute deltas
+        # compute mfcc
         with torch.no_grad():
             res = self.op(sig)
             if self.log_mels:
                 log_offset = 1e-6
                 res = torch.log(res + log_offset)
-        d = res
-        ds = [res]
-        for _ in range(self.deltas):
-            q = self.delta_op(d)
-            ds.append(q)
-            d = q
-        res = torch.cat(ds, 1)
-        res = res.permute(0, 2, 1)  # .detach()
+
+        # [C, H, T] -> [C, T, H]
+        res = res.permute(0, 2, 1)
 
         # only take first channel
         return res[:1]

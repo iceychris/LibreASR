@@ -1,23 +1,32 @@
+import contextlib
 from functools import partial
 import math
 import gc
 
 import torch
 from fastcore.foundation import L, patch
-from fastai2.learner import *
-from fastai2.callback.core import Callback
-from fastai2.callback.tracker import (
+from fastai.learner import *
+from fastai.callback.core import Callback
+from fastai.callback.tracker import (
     TerminateOnNaNCallback,
     SaveModelCallback,
     ReduceLROnPlateau,
 )
-from fastai2.callback.fp16 import MixedPrecision
-from fastai2.callback.data import CudaCallback
-from fastai2.optimizer import Adam, Lamb, Lookahead, ranger
+from fastai.callback.fp16 import MixedPrecision
+from fastai.callback.data import CudaCallback
+from fastai.optimizer import Adam, Lamb, Lookahead, ranger
+from fastai.torch_core import rank_distrib
+from fastai.distributed import DistributedTrainer
 
 from IPython.core.debugger import set_trace
 
-from libreasr.lib.callbacks import Tensorboard
+from libreasr.lib.callbacks import (
+    Tensorboard,
+    GradAccumCallback,
+    GradAccumCallbackDDP,
+    Rank0Wrapper,
+    EvalSpeechModel,
+)
 from libreasr.lib.loss import get_loss_func
 from libreasr.lib.optimizer import AdaHessian, Apollo, ranger_adabelief
 
@@ -45,23 +54,6 @@ def transducer_splitter(m, adahessian=False):
 
 def over9000(p, lr=slice(3e-3)):
     return Lookahead(Lamb(p, lr))
-
-
-class GradAccumCallback(Callback):
-    count = 0
-    run_after = MixedPrecision
-
-    def __init__(self, num_batches):
-        self.num_batches = num_batches
-
-    def after_backward(self):
-        self.count += 1
-        if (self.count % self.num_batches) == 0:
-            # print("backward passed")
-            pass
-        else:
-            # print("backward dropped")
-            raise CancelBatchException()
 
 
 class HutchinsonTraceCallback(Callback):
@@ -170,12 +162,30 @@ class HutchinsonTraceCallback(Callback):
 class ASRLearner(Learner):
     @staticmethod
     def from_config(conf, db, m):
+        # pull info from config
+        acnb = conf["batching"].get("accumulate", 1)
+        tests_per_epoch = conf.get("tests_per_epoch", 0)
+        mp = conf.get("training", {}).get("mp", {}).get("enable", False)
+        lang_name = conf.get("lang", "unknown")
+        ddp = conf.get("training", {}).get("ddp", {}).get("enable", False)
+        espm_kwargs = conf.get("espm_kwargs", {})
+        espm_kwargs.update({"lang_name": lang_name})
+        use_persistence_cbs = not ddp or rank_distrib() == 0
+
+        # define callbacks
         cbs = [
             CudaCallback(),
             TerminateOnNaNCallback(),
-            SaveModelCallback(),
             ReduceLROnPlateau(patience=1, min_lr=1e-5, factor=1.5),
         ]
+        if use_persistence_cbs:
+            cbs.append(
+                EvalSpeechModel(
+                    ddp=ddp,
+                    tests_per_epoch=tests_per_epoch,
+                    espm_kwargs=espm_kwargs,
+                )
+            )
         optim = conf["training"]["optimizer"].lower()
         if optim == "ranger":
             opt_func = ranger
@@ -186,7 +196,7 @@ class ASRLearner(Learner):
         elif optim == "lamb":
             opt_func = Lamb
         elif optim == "apollo":
-            from fastai2.optimizer import OptimWrapper
+            from fastai.optimizer import OptimWrapper
 
             def of(param_groups, **kwargs):
                 lr_init = 1e-4
@@ -227,22 +237,23 @@ class ASRLearner(Learner):
 
         else:
             raise Exception("No such optimizer")
-        acnb = conf["batching"]["accumulate"]
         if acnb > 1 and not optim == "adahessian":
-            cbs.append(GradAccumCallback(num_batches=acnb))
+            if ddp:
+                gac = GradAccumCallbackDDP
+            else:
+                gac = GradAccumCallback
+            cbs.append(gac(num_batches=acnb))
         extra_cbs = []
-        if conf["mp"]:
-            extra_cbs.append(MixedPrecision(clip=conf["mp_clip"]))
-            _ = m.half()
         if conf["tensorboard"]:
-            _tb = partial(
-                Tensorboard,
-                wandb=conf["wandb"],
-                test=True,
-                tests_per_epoch=conf["tests_per_epoch"],
-                mp=conf["mp"],
-            )()
-            extra_cbs.append(_tb)
+            if use_persistence_cbs:
+                _tb = partial(
+                    Tensorboard,
+                    wandb=conf["wandb"],
+                    test=True,
+                    tests_per_epoch=conf["tests_per_epoch"],
+                    ddp=ddp,
+                )()
+                extra_cbs.append(_tb)
         learn = Learner(
             db,
             m,
@@ -260,7 +271,8 @@ class ASRLearner(Learner):
             cbs=cbs,
         )
         learn.extra_cbs = extra_cbs
-        if conf["mp"]:
-            # dirty fix
-            learn.dls.device = torch.device("cuda:0")
+        learn.conf = conf
+        if mp:
+            learn = learn.to_native_fp16()
+            print("NativeMixedPrecision activated.")
         return learn

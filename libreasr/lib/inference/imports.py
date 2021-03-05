@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.quantization
 from fastcore.transform import Pipeline
-from fastai2_audio.core.all import AudioTensor
+from fastaudio.core.all import AudioTensor
 
 from libreasr.lib.config import *
 from libreasr.lib.data import preload_tfms

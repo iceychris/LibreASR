@@ -104,7 +104,7 @@ class ASRDatabunchBuilder:
             df = pd.read_csv(q)
             print(f"[builder] [{self.mode}] df {q} loaded.")
             if pcent != 1.0:
-                df = df.sample(frac=pcent)
+                df = df.sample(frac=pcent, random_state=4471)
             dfs.append(df)
         # TODO set sort=False at some point (as it is not needed)
         self.df = pd.concat(dfs, ignore_index=True, copy=False, sort=True)

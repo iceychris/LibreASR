@@ -1,38 +1,54 @@
 from functools import partial
 
-# from tqdm import tqdm_notebook as tqdm
 from tqdm import tqdm
-from fastcore.foundation import patch
-from fastai2.learner import Learner
+from fastai.learner import Learner
 import numpy as np
 
 from matplotlib import pyplot as plt
-from fastai2.torch_basics import *
-from fastai2.data.all import *
-from fastai2_audio.core.signal import AudioTensor
+from fastai.torch_basics import *
+from fastai.data.all import *
+from fastai.callback.tracker import TrackerCallback
+from fastaudio.core.signal import AudioTensor
 
 from libreasr.lib.metrics import cer, wer
 from IPython.core.debugger import set_trace
 
 
-@patch
-def test(
+def eval_speech_model(
     self: Learner,
     pcent=1.0,
     min_samples=800,
-    device="cuda:0",
+    device=None,
     train=False,
-    mp=False,
+    ddp=False,
+    lang_name="unknown",
     save_best=True,
+    save_with_opt=True,
+    save_multiple=True,
 ):
     lang = self.lang
-    m = self.model.to(device).eval()
+    m = self.model
+    if ddp:
+        m = m.module
+
+    def to_device(x):
+        if device is None:
+            if torch.cuda.is_available():
+                return x.cuda()
+            else:
+                return x.to("cpu")
+        return x.to(device)
+
+    # put model in eval mode
+    m = to_device(m).eval()
 
     # choose train or valid dl
     if train:
         dl = self.dls.train
     else:
         dl = self.dls.valid
+    if ddp:
+        dl = dl.dl
 
     # store best attr (at start)
     if save_best and not hasattr(self, "best_wer"):
@@ -41,9 +57,6 @@ def test(
     # save & mutate
     back_to_train = self.training
     back_to_shuffle = dl.shuffle
-    back_to_half = mp
-    if back_to_half:
-        self.model.float()
     dl.shuffle = False
 
     bs = 8
@@ -56,7 +69,7 @@ def test(
     for batch, _ in tqdm(zip(iterator, _iter_list), total=_for):
         for X, Y in zip(batch[0][0], batch[1][0]):
             # set_trace()
-            utterance = X.to(device)
+            utterance = to_device(X)
             label = Y.detach().cpu().numpy().tolist()
 
             _pred, _metric = m.transcribe(utterance)
@@ -86,17 +99,13 @@ def test(
     if hasattr(self, "best_wer"):
         if _wer < self.best_wer:
             if save_best and _wer < 1.0:
-                self.save("best_wer", with_opt=True)
+                self.save(f"{lang_name}-best_wer", with_opt=save_with_opt)
+                if save_multiple:
+                    self.save(f"{lang_name}-{_wer:.3f}wer", with_opt=save_with_opt)
                 print("New best WER saved:", _wer)
             else:
                 print("New best WER:", _wer)
             self.best_wer = _wer
-
-    # plot lens
-    # plt.hist(_xlens, bins=20)
-    # plt.show()
-    # plt.hist(_ylens, bins=20)
-    # plt.show()
 
     last = f"true: {_true} | pred: {_pred}"
     print(f"CER={_cer:.4f} | WER={_wer:.4f} | {last}")
@@ -110,14 +119,4 @@ def test(
     # restore
     if back_to_train:
         self.model.train()
-    if back_to_half:
-        self.model.half()
     dl.shuffle = back_to_shuffle
-
-
-# no sr required
-def __new__(cls, x, sr=16000, **kwargs):
-    return TensorBase.__new__(cls, x, sr=sr, **kwargs)
-
-
-AudioTensor.__new__ = __new__

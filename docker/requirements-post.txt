@@ -1,0 +1,5 @@
+warp_rnnt
+torchaudio
+fastai==2.1.9
+fastaudio
+fastscript

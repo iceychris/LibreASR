@@ -66,9 +66,11 @@ def parse_transforms(conf, inference):
 
 
 def apply_cuda_stuff(conf):
+    ddp = conf.get("training", {}).get("ddp", {}).get("enable", False)
     if conf["cuda"]["enable"] and torch.cuda.is_available():
         if torch.cuda.is_available():
-            torch.cuda.set_device(int(conf["cuda"]["device"].split(":")[1]))
+            if not ddp:
+                torch.cuda.set_device(int(conf["cuda"]["device"].split(":")[1]))
             torch.backends.cudnn.benchmark = conf["cuda"]["benchmark"]
         else:
             raise Exception("cuda not available")
@@ -99,6 +101,14 @@ def apply_overrides(conf, config_paths):
     return conf
 
 
+def fix_config(conf):
+    # choose transforms
+    if conf["model"]["learnable_stft"]:
+        conf["transforms"]["x"] = conf["transforms"]["x-stft"]
+    else:
+        conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
+
+
 def parse_and_apply_config(*args, inference=False, **kwargs):
 
     # open config
@@ -113,6 +123,9 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
     if lang is not None and len(lang) > 0:
         overrides.append(["overrides", "languages", lang])
     conf = apply_overrides(conf, overrides)
+
+    # special config fixes...
+    fix_config(conf)
 
     # torch-specific cuda settings
     apply_cuda_stuff(conf)

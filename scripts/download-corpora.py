@@ -2,7 +2,7 @@ import argparse
 
 from pathlib import Path
 
-from fastai2.data.external import untar_data
+from fastai.data.external import untar_data
 
 
 URL_CV = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com/cv-corpus-5.1-2020-06-22/"

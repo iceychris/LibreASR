@@ -1,0 +1,35 @@
+FROM pytorch/pytorch:1.7.1-cuda11.0-cudnn8-devel
+
+# base & audio stuff
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    git gcc g++ sox libsox-dev libsox-fmt-all vim make \
+    portaudio19-dev alsa-utils
+
+# python basics
+RUN pip3 install packaging wheel setuptools Cython
+
+# chsh
+SHELL ["/bin/bash", "-c"]
+
+# wrap pip command + reqs
+ENV CUDA_HOME=/usr/local/nvidia
+COPY requirements.training-new.txt .
+RUN pip3 install -r requirements.training-new.txt
+
+# build & install torchaudio from source
+# RUN pip3 uninstall -y torchaudio && \
+#     git clone https://github.com/pytorch/audio && \
+#     cd audio && git checkout v0.6.0 && \
+#     python3 setup.py install
+
+# check everything is fine
+COPY check.py .
+RUN python3 check.py
+
+# install jupyterlab
+RUN pip3 install jupyterlab
+
+# switch workdir
+WORKDIR /workspace
+CMD ["/bin/bash"]

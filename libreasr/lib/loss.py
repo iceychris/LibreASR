@@ -3,26 +3,6 @@ import multiprocessing
 import math
 import sys
 
-# fastai v2 stuff
-from fastai2.torch_basics import *
-from fastai2.layers import *
-from fastai2.data.all import *
-from fastai2.optimizer import *
-from fastai2.learner import *
-from fastai2.metrics import *
-from fastai2.text.core import *
-from fastai2.text.data import *
-from fastai2.text.models.core import *
-from fastai2.text.models.awdlstm import *
-from fastai2.text.learner import *
-from fastai2.callback.rnn import *
-from fastai2.callback.all import *
-
-from fastai2.vision.learner import *
-from fastai2.vision.models.xresnet import *
-
-from fastai2_audio.core import *
-
 import torchaudio
 import numpy as np
 import pandas as pd
@@ -62,16 +42,16 @@ def get_loss_func(
     if loss_type == "ctc":
         from torch.nn import CTCLoss
 
-        loss_func = CTCLoss(zero_infinity=True, reduction="none").to(device)
+        loss_func = CTCLoss(zero_infinity=True, reduction="none")  # .to(device)
 
-    elif loss_type == "rnnt":
+    elif loss_type == "UNUSED":
         from warp_rnnt import rnnt_loss
 
         loss_func = partial(rnnt_loss, average_frames=False)
         if noisystudent:
             loss_func_ns = nn.KLDivLoss(log_target=True, reduction="none")
 
-    elif loss_type == "contrastive":
+    elif loss_type == "contrastive" or loss_type == "rnnt":
 
         def l(loss, *args, reduction="mean"):
             if reduction == "mean":
@@ -112,8 +92,12 @@ def get_loss_func(
             inp[inp == float("-Inf")] = 0
 
         # do loss calculation
-        inp, tgt = inp.to(device), tgt.to(device)
-        inp_lens, tgt_lens = inp_lens.to(device), tgt_lens.to(device)
+        if device.startswith("cuda"):
+            inp, tgt = inp.cuda(), tgt.cuda()
+            inp_lens, tgt_lens = inp_lens.cuda(), tgt_lens.cuda()
+        else:
+            inp, tgt = inp.cpu(), tgt.cpu()
+            inp_lens, tgt_lens = inp_lens.cpu(), tgt_lens.cpu()
         if noisystudent:
             # perform log softmax as we did not do it before
             inp_sm = F.log_softmax(inp, dim=-1)

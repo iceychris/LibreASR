@@ -31,10 +31,10 @@ class _Mish(nn.Module):
 
 
 try:
-    from fastai2.layers import Mish
+    from fastai.layers import Mish
 
     Mish = Mish
-    print("Using Mish activation from fastai2.")
+    print("Using Mish activation from fastai.")
 except:
     Mish = _Mish
     print("Using Mish activation from lib.layers.")

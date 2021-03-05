@@ -75,10 +75,12 @@ class StackedRNN(nn.Module):
         self.reduction_factors = reduction_factors
 
         # learnable state & temporary state
-        self.hs = nn.ParameterList()
-        for hidden_size in self._os:
+        t = torch.zeros(len(self._os), 2, 1, 1, self._os[-1])
+        for i, hidden_size in enumerate(self._os):
             h, tmp = get_initial_state(rnn_type, hidden_size)
-            self.hs.append(h)
+            t[i][:] = h
+            # self.hs.append(h)
+        self.hs = nn.Parameter(t.contiguous())
 
         # state cache (key: bs, value: state)
         self.cache = {}
@@ -103,6 +105,7 @@ class StackedRNN(nn.Module):
         self.rnns = nn.ModuleList()
         for i, o in zip(self._is, self._os):
             r = rnn_cls(i, o, batch_first=self.batch_first)
+            r.flatten_parameters()
             self.rnns.append(r)
 
     def forward_one_rnn(
@@ -111,7 +114,10 @@ class StackedRNN(nn.Module):
         bs = x.size(0)
         if state is None:
             s = self.cache[bs][i] if self.cache.get(bs) is not None else None
-            is_tmp_state_possible = self.training and s is not None
+            same_dev_and_not_none = False if s is None else s[0].device == x.device
+            is_tmp_state_possible = (
+                self.training and s is not None and same_dev_and_not_none
+            )
             if is_tmp_state_possible and should_use_tmp_state:
                 # temporary state
                 pass
@@ -129,12 +135,15 @@ class StackedRNN(nn.Module):
 
         if self.rnn_type == "LSTM" or self.rnn_type == "GRU":
             # PyTorch
-            if lengths is not None:
+            t_idx = 1 if self.batch_first else 0
+            if False:  # lengths is not None:
                 seq = pack_padded_sequence(
-                    x, lengths, batch_first=True, enforce_sorted=False
+                    x, lengths.cpu(), batch_first=True, enforce_sorted=False
                 )
                 seq, new_state = self.rnns[i](seq, s)
-                x, _ = pad_packed_sequence(seq, batch_first=True)
+                x, _ = pad_packed_sequence(
+                    seq, batch_first=True, total_length=x.size(t_idx)
+                )
                 return (x, new_state)
             else:
                 return self.rnns[i](x, s)
