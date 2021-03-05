@@ -35,6 +35,7 @@ drun:
 		-v $(shell pwd)/:/workspace \
 		-v /models:/models \
 		-v $(shell pwd)/ray_results:/root/ray_results \
+		-v $(shell pwd)/cache:/root/.cache \
 		$(DOCKER_IMAGE) $(DOCKER_SHELL) 
 
 dshell:

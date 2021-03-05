@@ -16,6 +16,10 @@ class LibreASRInstance:
         kwargs.update(self.conf.get("hypers", {}).get("tuned", {}))
 
         # transcribe
+        only_one = False
+        if not isinstance(sth, (list, tuple)):
+            sth = [sth]
+            only_one = True
         transcripts = []
         if batch:
             res = self._transcribe_batches(sth, **kwargs)
@@ -24,6 +28,8 @@ class LibreASRInstance:
             for obj in sth:
                 res = self._transcribe_one(obj, **kwargs)
                 transcripts.append(res)
+        if only_one:
+            return transcripts[0]
         return transcripts
 
     def stream(self, sth, **kwargs):
@@ -79,7 +85,7 @@ class LibreASRInstance:
 
 
 class LibreASRTraining(LibreASRInstance):
-    def __init__(self, lang, config_path):
+    def __init__(self, lang, config_path, **kwargs):
         super().__init__()
         self.config_path = config_path
         from libreasr.lib.imports import parse_and_apply_config
@@ -92,17 +98,17 @@ class LibreASRTraining(LibreASRInstance):
             self.db,
             self.model,
             self.learn,
-        ) = parse_and_apply_config(path=config_path, lang=lang)
+        ) = parse_and_apply_config(path=config_path, lang=lang, **kwargs)
 
 
 class LibreASRInference(LibreASRInstance):
-    def __init__(self, lang, config_path):
+    def __init__(self, lang, config_path, **kwargs):
         super().__init__()
         self.config_path = config_path
         from libreasr.lib.inference.main import load_stuff
 
         self.conf, self.lang, self.model, self.x_tfm, self.x_tfm_stream = load_stuff(
-            lang, config_path=config_path
+            lang, config_path=config_path, **kwargs
         )
 
 

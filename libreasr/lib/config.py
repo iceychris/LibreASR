@@ -14,6 +14,7 @@ from libreasr.lib.data import ASRDatabunch
 from libreasr.lib.models import get_model
 from libreasr.lib.learner import ASRLearner
 from libreasr.lib.lm import load_lm
+from libreasr.lib.download import download_all
 
 
 def update(d, u):
@@ -109,16 +110,23 @@ def fix_config(conf):
         conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
 
 
-def parse_and_apply_config(*args, inference=False, **kwargs):
+def parse_and_apply_config(
+    *args, inference=False, lang="", path=None, config_hook=lambda x: None, **kwargs
+):
 
-    # open config
-    conf = open_config(*args, **kwargs)
+    # download pretrained models
+    if inference and path is None:
+        lang, mcp = download_all(lang)
+        if mcp is not None:
+            conf = open_config(*args, path=mcp, **kwargs)
+    else:
+        # open config
+        conf = open_config(*args, path=path, **kwargs)
 
     # override config for inference + language
     overrides = []
     if inference:
         overrides.append(["overrides", "inference"])
-    lang = kwargs.get("lang", "")
     lang_name = lang
     if lang is not None and len(lang) > 0:
         overrides.append(["overrides", "languages", lang])
@@ -126,6 +134,9 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
 
     # special config fixes...
     fix_config(conf)
+
+    # apply hook
+    config_hook(conf)
 
     # torch-specific cuda settings
     apply_cuda_stuff(conf)
@@ -143,14 +154,15 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         torch.backends.quantized.engine = conf["quantization"]["engine"]
 
     # grab language + sanity check
+    tok_path = os.path.expanduser(conf["tokenizer"]["model_file"])
     try:
-        lang, _ = get_language(model_file=conf["tokenizer"]["model_file"])
+        lang, _ = get_language(model_file=tok_path)
     except:
         builder_train.train_tokenizer(
-            model_file=conf["tokenizer"]["model_file"],
+            model_file=tok_path,
             vocab_sz=conf["model"]["vocab_sz"],
         )
-        lang, _ = get_language(model_file=conf["tokenizer"]["model_file"])
+        lang, _ = get_language(model_file=tok_path)
     check_vocab_sz(conf)
 
     if not inference:
@@ -159,16 +171,22 @@ def parse_and_apply_config(*args, inference=False, **kwargs):
         # check_db(db)
 
     # grab params
-    model_qpre = conf["quantization"]["model"].get("pre", False)
-    model_qpost = conf["quantization"]["model"].get("post", False)
+    model_qpre = conf.get("quantization", {}).get("model", {}).get("pre", False)
+    model_qpost = conf.get("quantization", {}).get("model", {}).get("post", False)
     model_path_to_load = "q" if model_qpre else "n"
     model_path = conf.get("model", {}).get("path", {}).get(model_path_to_load, "")
+    if isinstance(model_path, list):
+        model_path = [os.path.expanduser(x) for x in model_path]
+    else:
+        model_path = os.path.expanduser(model_path)
     model_args = (model_qpre, model_qpost, model_path)
     model_do_load = conf["model"].get("load", False)
-    lm_qpre = conf["quantization"]["lm"].get("pre", False)
-    lm_qpost = conf["quantization"]["lm"].get("post", False)
+    lm_qpre = conf.get("quantization", {}).get("lm", {}).get("pre", False)
+    lm_qpost = conf.get("quantization", {}).get("lm", {}).get("post", False)
     lm_path_to_load = "q" if lm_qpre else "n"
-    lm_path = conf.get("lm", {}).get("path", {}).get(lm_path_to_load, "")
+    lm_path = os.path.expanduser(
+        conf.get("lm", {}).get("path", {}).get(lm_path_to_load, "")
+    )
     lm_args = (lm_qpre, lm_qpost, lm_path)
     lm_enable = conf["lm"].get("enable", False)
 

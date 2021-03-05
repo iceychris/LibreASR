@@ -85,8 +85,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config-path",
         type=str,
-        default="./config/deploy.yaml",
-        help="Path to LibreASR config",
+        default=None,
+        help="Path to LibreASR config (optional)",
     )
     parser.add_argument(
         "--lang",
@@ -109,11 +109,8 @@ if __name__ == "__main__":
 
     # retrieve & display transcripts
     generator = record(args.sr, args.gain)
-    last_y = ""
-    for i, y in enumerate(l.stream(generator, sr=args.sr)):
-        out = "".join(y for x, y in itertools.zip_longest(last_y, y) if x != y)
-        last_y = y
-        print(out, end="")
+    for i, (diff, y_all) in enumerate(l.stream(generator, sr=args.sr)):
+        print(diff, end="")
         if (i + 1) % 10 == 0:
             print()
         sys.stdout.flush()

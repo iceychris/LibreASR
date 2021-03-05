@@ -11,14 +11,14 @@ from libreasr.lib.inference.imports import *
 # - Learner
 
 
-def load_stuff(lang, config_path="./config/testing.yaml"):
+def load_stuff(lang, config_path=None, **kwargs):
 
     # use more threads for PyTorch
     torch.set_num_threads(2)
 
     # grab stuff
     conf, lang, m, tfms = parse_and_apply_config(
-        inference=True, lang=lang, path=config_path
+        inference=True, lang=lang, path=config_path, **kwargs
     )
 
     # arguments for transforms

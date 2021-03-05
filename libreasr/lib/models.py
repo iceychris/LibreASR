@@ -394,7 +394,7 @@ class Transducer(Module):
             use_tmp_bos_pcent=conf["model"]["use_tmp_bos_pcent"],
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
-            joint=conf["model"]["joint"]["enable"],
+            joint=conf["model"]["joint"].get("enable", True),
             joint_reversible=conf["model"]["joint"]["reversible"],
             learnable_stft=conf["model"]["learnable_stft"],
             device=conf["cuda"]["device"],
@@ -506,6 +506,9 @@ class Transducer(Module):
                 x, xl = tpl
         else:
             x, xl = tpl, None
+
+        # preprocess
+        x, xl = self.preprocessor(x, xl)
 
         # encoder
         x = x.reshape(x.size(0), x.size(1), -1)
@@ -1233,8 +1236,9 @@ class ContrastiveTransducer(Transducer):
             loss = torch.zeros((1,), device=x.device)
             count = 0.0
             for sim in (sim1, sim2, sim3):
-                loss += F.cross_entropy(sim, labels)
-                loss += F.cross_entropy(sim.T, labels)
+                l1, l2 = F.cross_entropy(sim, labels), F.cross_entropy(sim.T, labels)
+                loss += l1 + l2
+                print("loss", l1 + l2)
                 count += 2
             return loss / count
 
