@@ -18,9 +18,10 @@ format:
 
 # DOCKER_IMAGE=asr-pytorch
 # DOCKER_IMAGE=iceychris/libreasr:latest
-DOCKER_IMAGE=iceychris/libreasr:gpu-dev
+DOCKER_IMAGE=iceychris/libreasr:cpu-dev
 DOCKER_SHELL=/bin/bash
-DOCKER_EXTRA_ARGS=--runtime=nvidia --shm-size=4096m -v /data/data-remote:/data
+# DOCKER_EXTRA_ARGS=--runtime=nvidia --shm-size=4096m -v /data/data-remote:/data
+DOCKER_EXTRA_ARGS=-v /data/data-remote:/data
 
 drun:
 	docker run $(DOCKER_EXTRA_ARGS) -it --rm \
@@ -94,7 +95,7 @@ deploy_test:
 # dev
 ###
 
-DEV_IMAGE=iceychris/libreasr:dev
+DEV_IMAGE=iceychris/libreasr:cpu-dev
 
 dev-build:
 	docker build -t $(DEV_IMAGE) -f docker/Dockerfile.dev .

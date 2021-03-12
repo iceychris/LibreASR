@@ -7,15 +7,11 @@ import torchaudio
 from libreasr import LibreASR
 
 WAVS = [
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18227443.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18520948.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_17516889.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18818000.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18239022.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18496210.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18234827.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_17672459.wav",
-    "/data/stt/data/common-voice/de/clips/common_voice_de_18148928.wav",
+    "./assets/samples/common_voice_de_17672459.wav",
+    "./assets/samples/common_voice_de_18227443.wav",
+    "./assets/samples/common_voice_de_18520948.wav",
+    "./assets/samples/common_voice_de_17516889.wav",
+    "./assets/samples/common_voice_de_18818000.wav",
 ]
 
 

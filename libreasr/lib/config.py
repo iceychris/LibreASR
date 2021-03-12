@@ -104,10 +104,11 @@ def apply_overrides(conf, config_paths):
 
 def fix_config(conf):
     # choose transforms
-    if conf["model"]["learnable_stft"]:
-        conf["transforms"]["x"] = conf["transforms"]["x-stft"]
-    else:
-        conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
+    if "x" not in list(conf["transforms"].keys()):
+        if conf["model"]["learnable_stft"]:
+            conf["transforms"]["x"] = conf["transforms"]["x-stft"]
+        else:
+            conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
 
 
 def parse_and_apply_config(

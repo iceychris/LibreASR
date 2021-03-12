@@ -60,10 +60,14 @@ def grpc_thread_func(conf, lang, q_recv, q_send):
 class APIHandler(tornado.web.RequestHandler):
     def initialize(self, conf):
         self.conf = conf
-        self.langs = conf["overrides"]["languages"]
+        info = {k: {"code": k, **v} for k, v in conf["overrides"]["languages"].items()}
+        self.langs = {
+            "languages": list(info.values())
+        }
 
     def set_default_headers(self):
         self.set_header("Content-Type", "application/json")
+        self.set_header("Access-Control-Allow-Origin", "*")
 
     def get(self):
         raw = json.dumps(self.langs)
@@ -168,7 +172,7 @@ if __name__ == "__main__":
     opts = {"conf": conf}
     handlers = [
         (r"/api", APIHandler, opts),
-        (r"/asupersecretwebsocketpath345", WebSocket, opts),
+        (r"/websocket", WebSocket, opts),
         (
             r"/(.*)",
             tornado.web.StaticFileHandler,
