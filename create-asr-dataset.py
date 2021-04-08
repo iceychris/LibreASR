@@ -17,13 +17,25 @@ import mimetypes
 
 mimetypes.types_map[".flac"] = "audio/flac"
 
-from fastai_audio.core.all import get_audio_files
+from fastaudio.core.all import get_audio_files
 
 from libreasr.lib.utils import sanitize_str
 from IPython.core.debugger import set_trace
 
 
+# debug errors
 PRINT_DROP = False
+
+# estonian datasets 
+ESTONIAN = [
+    "estonian",
+    "intervjuud",
+    "vestlussaated",
+    "uudised",
+    "loengusalvestused",
+    "riigiokgu",
+    "jutusaated",
+]
 
 
 def save(df, path, print_fun=print):
@@ -35,7 +47,7 @@ def process_one(file, get_labels):
     rows = []
     try:
         if file.suffix == ".m4a":
-            raise Exception("no audio file")
+            raise Exception(".m4a isn't an audio file: " + str(file))
         aud, sr = torchaudio.load(file)
         assert aud.size(0) >= 1 and aud.size(1) >= 1
         xlen = int((aud.size(1) / float(sr)) * 1000.0)
@@ -116,7 +128,7 @@ if __name__ == "__main__":
         "--filter",
         default="",
         type=str,
-        help="filter the files by this csv",
+        help="filter the files by this csv/tsv file",
     )
     args = parser.parse_args()
 
@@ -153,26 +165,36 @@ if __name__ == "__main__":
     files = get_audio_files(p)
     print("> raw files:", len(files))
 
-    # filter out files that are already in the df
+    # filter out files that are already in the output df
     files = pd.Series([str(x) for x in files])
     res = ~files.isin(df.file)
 
     # filter out files that are in --filter if specified
     if args.filter != "":
-        df_filter = pd.read_csv(p / args.filter)
-        res2 = files.isin(pd.unique(df_filter.file))
+        if Path(args.filter).suffix == ".tsv":
+            delim = "\t"
+            col = "path"
+            base = pd.Series([Path(x).stem + ".mp3" for x in files])
+        else:
+            delim = ","
+            col = "file"
+            base = files
+        df_filter = pd.read_csv(p / args.filter, delimiter=delim)
+        res2 = base.isin(pd.unique(getattr(df_filter, col)))
         res = res & res2
 
+    # apply filter (res is a bool array)
     files = [Path(x) for x in files[res].tolist()]
     print("> filtered files:", len(files))
 
     # get_labels for each dataset format
     if dataset == "common-voice":
-        label_df = pd.read_csv(path / "validated.tsv", delimiter="\t")
+        label_df = pd.read_csv(path / args.filter, delimiter="\t")
 
         def get_labels(file, **kwargs):
             n = file.stem + ".mp3"
             l = label_df[label_df.path == n].sentence.iloc[0]
+            l = sanitize_str(l)
             return [(0, -1, l, len(l))]
 
     elif dataset == "tatoeba":
@@ -335,12 +357,60 @@ if __name__ == "__main__":
 
             return transcripts
 
+    elif dataset in ESTONIAN:
+
+        from bs4 import BeautifulSoup
+
+        def get_labels(file, duration):
+
+            # drop if not wav
+            if file.suffix != ".wav":
+                return []
+
+            # get file path
+            label_file = f"{file.parent}/{file.stem}.trs"
+
+            # try opening & parsing file
+            try:
+                with open(label_file, 'r') as f:
+                    soup = BeautifulSoup(f, "html.parser")
+            except:
+                with open(label_file, 'rb') as f:
+                    soup = BeautifulSoup(f, "html.parser")
+
+            # iterate through content
+            t = None
+            text = ""
+            transcripts = []
+            elems = soup.find_all()
+            for elem in elems:
+                if elem.name == "turn":
+                    for i, e in enumerate(elem):
+                        if e.name == "sync":
+                            tnow = float(e["time"])
+                            if t is not None:
+                                xstart, xlen = int(t*1000.), int((tnow-t)*1000.)
+                                start, end = int(t*1000.), int(tnow*1000.)
+                                if not (xstart >= duration or (end - start) <= 0.0 or len(text) < 3):
+                                    transcripts.append((xstart, xlen, text, len(text)))
+                                text = ""
+                            t = tnow
+                        else:
+                            txt = e.string
+                            if txt is not None:
+                                txt = str(txt)
+                                if txt != "" and txt != "\n":
+                                    txt = txt.replace("\n", "")
+                                    txt = txt.replace("\r", "")
+                                    text += sanitize_str(txt)
+            return transcripts
+
     # spawn a pool
     p = multiprocessing.Pool(args.workers)
     bads = 0
     with tqdm.tqdm(total=len(files)) as t:
         for i, tpls in enumerate(
-            p.imap_unordered(partial(process_one, get_labels=get_labels), files)
+            p.imap_unordered(partial(process_one, get_labels=get_labels), files, 1024)
         ):
 
             # iterate through labels
