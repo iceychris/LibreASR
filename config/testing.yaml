@@ -7,6 +7,23 @@ transforms:
   # independent variable
   x-stft:
     - name: MyOpenAudio
+      partial: true
+      args:
+        pad_end: 0.3
+        pad_factor: 1.5
+
+    # resample
+    - name: Resample
+      partial: true
+      args:
+        resample_sr: 8000
+
+    # augmentation
+    - name: ResamplePoly
+      wrap: true
+      partial: true
+      args:
+        delta: 20
  
     # bounds
     - name: PadderCutter
@@ -17,17 +34,21 @@ transforms:
   # independent variable
   x-no-stft:
     - name: MyOpenAudio
+      partial: true
+      args:
+        pad_end: 0.5
+        pad_factor: 2.25
     # - name: ChannelCut
 
     # # resampling
     # - name: Resample
 
-    # # augmentation
+    # augmentation
     # - name: ResamplePoly
     #   wrap: true
     #   partial: true
     #   args:
-    #     delta: 10
+    #     delta: 20
     # - name: ChangeVolume
     #   wrap: true
     #   partial: true
@@ -87,7 +108,7 @@ transforms:
 
 # set the used language
 #  "multi" for multilingual
-lang: en
+lang: de
 
 # datasets
 dataset_paths: 
@@ -101,11 +122,18 @@ dataset_paths:
     common-voice-fr: "/data/stt/data/common-voice/fr"
     common-voice-es: "/data/stt/data/common-voice/es"
     common-voice-it: "/data/stt/data/common-voice/it"
+    common-voice-et: "/data/stt/data/common-voice/et"
     yt-en: "/data/stt/data/yt/en"
     yt-de: "/data/stt/data/yt/de"
     yt-fr: "/data/stt/data/yt/fr"
     yt-es: "/data/stt/data/yt/es"
     yt-it: "/data/stt/data/yt/it"
+    et-a: "/data/stt/data/estonian/intervjuud"
+    et-b: "/data/stt/data/estonian/vestlussaated"
+    et-c: "/data/stt/data/estonian/uudised"
+    et-d: "/data/stt/data/estonian/loengusalvestused"
+    et-e: "/data/stt/data/estonian/riigiokgu"
+    et-f: "/data/stt/data/estonian/jutusaated"
 
 # selected datasets
 datasets:
@@ -144,12 +172,23 @@ datasets:
     valid:
       - common-voice-it
       # - yt-it
+  et:
+    train:
+      - common-voice-et
+      - et-a
+      - et-b
+      - et-c
+      - et-d
+      - et-e
+      - et-f
+    valid:
+      - common-voice-et
 
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 0.05  # 1.0  # 0.25 # 1.0
-    valid: 0.01  # 1.0  # 1.0  # 1.0
+    train: 1.0  # 1.0  # 0.25 # 1.0
+    valid: 1.0  # 1.0  # 1.0
     test: 1.0
 
 
@@ -193,26 +232,35 @@ tokenizer:
 # at the builder stage?
 apply_limits: True
 
+# ------------- regular training   -------------
 # audio length [seconds]
 almins: 0.5
-almaxs: 15.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+almaxs: 8.0 # 15.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
-y_max: 250 # 120 # 80 # 130 # 80 # 60 # 100
-y_max_words: 100
+y_max: 300 # 120 # 80 # 130 # 80 # 60 # 100
+y_max_words: 200
+
+# ------------- streaming training -------------
+# almins: 0.5
+# almaxs: 80.0
+# y_min: 1
+# y_max: 15000
+# y_max_words: 1000
+
 
 # which dataset to use
-suffix: "" # "cat-2468-b" # "cat-longy" # "cat-mix" # cat-4
+suffix: "" # "cat-2468-a" # ["cat-stream", "cat-2468-a"] # , "cat-2468-b", "cat-2468-c"]
 
 # dataloader settings
 dataloader_args:
 
   # maximum batch size
-  bs_max: 64 # 128 # 64 # 32
+  bs_max: 64 # 48 # 128 # 64 # 32
 
   # batch size multiplier
-  bs_mul: 2. # 4. # 2. # 1.
+  bs_mul: 2. # 1.5 # 4. # 2. # 1.
 
   # prng save state path
   prng_state_path: "/home/chris"
@@ -250,7 +298,8 @@ cpu:
 
 model:
   name: Transducer
-  feature_sz: 1280
+  # feature_sz: 1280
+  feature_sz: 640
   embed_sz: 512
   hidden_sz: 1024
   out_sz: 1024
@@ -279,7 +328,7 @@ model:
     dropout: 0.0
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
-  learnable_stft: false
+  learnable_stft: true
   loss: true
 
 
@@ -318,7 +367,7 @@ training:
 
   # NativeMixedPrecision training
   mp:
-    enable: true
+    enable: false
 
   # DistributedDataParallel
   #  (muli-gpu and/or multi-host training)
@@ -340,15 +389,24 @@ batching:
   # batch size for validation dataset
   batch_size_valid: 8
 
-  # gradient accumulation
+  # gradient accumulation (gas)
   #  (number of batches)
   #  (regular training: 10)
-  #  (DP training: 5)
+  #  (DDP training: ?)
+  # streaming: 50
   accumulate: 10 # 5
 
 # losses
 loss:
   type: "rnnt"
+
+  # number to divide xlen by
+  #  this is usually determined
+  #  by the model architecture
+  #  and its downsampling
+  #  (RNN-T: 1)
+  #  (RNN-T with learnable stft: 1280)
+  reduction_factor: 640
 
 ## tokenization
 # for training a tokenizer on the current corpus
@@ -366,7 +424,7 @@ num_workers: 4 # 6 # 7
 # testing
 tensorboard: true
 wandb: false
-tests_per_epoch: 8
+tests_per_epoch: 8 # 24
 
 # eval speech model kwargs
 espm_kwargs:
@@ -374,7 +432,7 @@ espm_kwargs:
   min_samples: 800
   save_best: true
   save_with_opt: true
-  save_multiple: false
+  save_multiple: true
 
 # q
 quantization:
