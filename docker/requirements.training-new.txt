@@ -1,14 +1,12 @@
-# torch
---find-links https://download.pytorch.org/whl/torch_stable.html
-# torchaudio==0.6.0
-
 # misc
 packaging==20.9
 wheel==0.35.1
 setuptools==50.3.1.post20201107
 
-# fastai stuff
-fastai==2.2.7
+# torch and fastai stuff
+fastai==2.1.8
+torchaudio==0.7.2
+fastaudio==0.1.4
 
 # other
 Cython==0.29.21
@@ -25,3 +23,6 @@ memcnn==1.5.0
 
 # hyperparameter tuning
 ray[tune]==1.2.0
+
+# loss
+warp-rnnt==0.4.0

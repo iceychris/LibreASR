@@ -1,0 +1,5 @@
+torch==1.7.1
+fastai==2.1.8
+torchaudio==0.7.2
+fastaudio==0.1.4
+warp-rnnt==0.4.0
