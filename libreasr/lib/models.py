@@ -19,7 +19,6 @@ from IPython.core.debugger import set_trace
 
 from libreasr.lib.utils import *
 from libreasr.lib.layers import StackedRNN
-from libreasr.lib.layers.conformer import ConformerBlock
 from libreasr.lib.lm import LMFuser, LMFuserBatch
 from libreasr.lib.defaults import LM_ALPHA, LM_TEMP, MODEL_TEMP
 
@@ -1279,6 +1278,7 @@ class ConformerEncoder(Module):
         self.input_norm = nn.LayerNorm(feature_sz)
         hidden_conformer = 384  # hidden_sz // 2
         self.pre_proj = nn.Linear(feature_sz, hidden_conformer)
+        from libreasr.lib.layers.conformer import ConformerBlock
         self.conformer = nn.Sequential(
             *[
                 ConformerBlock(

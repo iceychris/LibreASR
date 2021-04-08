@@ -11,3 +11,7 @@ gpu-build:
 	docker build -t $(IMAGE) -f Dockerfile.gpu .
 gpu-run:
 	docker run --rm -it --runtime=nvidia $(IMAGE) /bin/bash
+
+
+cpu-dev:
+	docker build -f Dockerfile.cpu-dev -t iceychris/libreasr:cpu-dev .

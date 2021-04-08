@@ -38,8 +38,8 @@ DOWNLOADS = {
         },
         "model.pth": {
             "storage": "gdrive",
-            "id": "1pkREgeyioYSTohNfxVwZ8UJec9bmmQqC",
-            "sha256": "8076af1382db0dd3f4339a1f770c510f787c5eded6b07e7953aa01d0c7a77113",
+            "id": "19LrGnj8DLbCw5BlabfuTUPmXYc0jzSdD",
+            "sha256": "460a20f0c97302d86d0b1ffa01b952279dba3e409e71a564a69400e37cac0a6f",
         },
         "lm.pth": {
             "storage": "gdrive",

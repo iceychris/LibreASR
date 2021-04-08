@@ -4,7 +4,14 @@ import './App.css';
 import { transcribe, grabAudioProcessor, grabCtx } from './lib/utils';
 
 
-const WS_URI = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/asupersecretwebsocketpath345`;
+// dev
+// const URI_BASE = "localhost:8080";
+
+// prod
+const URI_BASE = window.location.host;
+
+const URI_WEBSOCKET = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${URI_BASE}/websocket`;
+const URI_API = `${window.location.protocol}//${URI_BASE}/api`;
 
 
 class App extends React.Component {
@@ -18,7 +25,12 @@ class App extends React.Component {
       emoji: "glyphicon glyphicon-option-horizontal",
       sampleRate: "...",
       bufferLength: "...",
-      selectedLanguage: "en",
+      selectedLanguage: "invalid",
+      languagesAvailable: [],
+      apiInfo: {
+        "languages": [],
+      },
+      allowRecording: false,
     };
     this.handleClickRecordStream = this.handleClickRecordStream.bind(this);
     this.handleLanguageChange = this.handleLanguageChange.bind(this);
@@ -28,7 +40,7 @@ class App extends React.Component {
   componentDidMount() {
     if (!window.socket) {
         try {
-          var socket = new WebSocket(WS_URI)
+          var socket = new WebSocket(URI_WEBSOCKET)
         } catch (err) {
           this.setState({
             connected: false,
@@ -54,6 +66,39 @@ class App extends React.Component {
           console.log("ws error:", err);
         }).bind(this);
         window.socket = socket;
+    }
+
+    // fetch api info stuff
+    //  and auto-choose lang
+    fetch(`${URI_API}`)
+      .then(response => response.json())
+      .then((data) => {
+        this.setState({
+          apiInfo: data,
+          languagesAvailable: data.languages
+            .filter(lang => lang.enable)
+            .map(lang => lang.code),
+        });
+        this.chooseFirstLang();
+      })
+
+  }
+
+  chooseFirstLang() {
+    const storedCode = localStorage.getItem("selectedLanguage");
+    let obj = {
+      target: {
+        value: "invalid"
+      }
+    } 
+    if(storedCode) {
+      obj.target.value = storedCode;
+      this.handleLanguageChange(obj, true);
+    } else {
+      if(this.state.languagesAvailable.length > 0) {
+        obj.target.value = this.state.languagesAvailable[0];
+        this.handleLanguageChange(obj, true);
+      }
     }
   }
 
@@ -101,7 +146,7 @@ class App extends React.Component {
 
   handleClickRecordStream(e) {
     e.preventDefault();
-    if (!this.state.connected) return;
+    if (!this.state.allowRecording) return;
     if (this.state.recording) {
         this.stopRecording();
     } else {
@@ -112,10 +157,15 @@ class App extends React.Component {
     }))
   }
 
-  handleLanguageChange(e) {
+  handleLanguageChange(e, connected=true) {
+    const code = e.target.value;
+    const isConnected = connected ? true : this.state.connected;
     this.setState({
-      selectedLanguage: e.target.value
+      selectedLanguage: code,
+      allowRecording: isConnected &&
+        this.state.languagesAvailable.includes(code),
     });
+    localStorage.setItem("selectedLanguage", code);
   }
 
   render() {
@@ -162,32 +212,19 @@ class App extends React.Component {
             </div>
 
             <div className="languageSelector">
-              Choose Language
+              Choose Language/Model
             <form>
-              <div className="radio">
-                <label>
-                  <input type="radio" value="en" 
-                                checked={this.state.selectedLanguage === 'en'} 
-                                onChange={this.handleLanguageChange} />
-                  English
-                </label>
-              </div>
-              <div className="radio">
-                <label>
-                  <input type="radio" value="de" 
-                                checked={this.state.selectedLanguage === 'de'} 
-                                onChange={this.handleLanguageChange} />
-                  German
-                </label>
-              </div>
-              <div className="radio">
-                <label>
-                  <input disabled type="radio" value="fr" 
-                                checked={this.state.selectedLanguage === 'fr'} 
-                                onChange={this.handleLanguageChange} />
-                  French
-                </label>
-              </div>
+              {this.state.apiInfo.languages.map((lang, index) => {
+                return <div className="radio" key={lang.code}>
+                  <label>
+                    <input type="radio" value={lang.code} 
+                      checked={this.state.selectedLanguage === lang.code} 
+                      disabled = {lang.enable ? "" : "disabled"}
+                      onChange={this.handleLanguageChange} />
+                    {lang.name}
+                  </label>
+                </div>
+              })}
             </form>
             </div>
 
@@ -206,7 +243,7 @@ class App extends React.Component {
             <span className={this.state.recording ? recordingClassesRecording : recordingClasses}></span>
             &nbsp;
             <button
-            className={this.state.connected ? classes : classesDisabled}
+            className={this.state.allowRecording ? classes : classesDisabled}
             onClick={this.handleClickRecordStream}
             id="record">
               {this.state.recording ? "Stop": "Start"} recording!

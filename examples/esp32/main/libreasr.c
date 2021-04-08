@@ -60,7 +60,7 @@ static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
 
 
-#define LIBREASR_URI "ws://libreasr/asupersecretwebsocketpath345"
+#define LIBREASR_URI "ws://libreasr/websocket"
 #define LIBREASR_PORT 8080
 esp_websocket_client_handle_t ws_client;
 
