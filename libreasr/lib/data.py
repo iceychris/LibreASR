@@ -465,12 +465,10 @@ def grab_asr_databunch(
                 print("-" * 75)
                 print(f"{i}th item:")
                 print("label:", label)
-            for j, aud_step in enumerate(aud_pipe[1:]):
+            for j, aud_step in enumerate(aud_pipe):
                 t1 = time.perf_counter()
-                if j == 0:
-                    item = aud_pipe[0](i)
-                else:
-                    item = aud_step(item)
+                # execute step
+                item = aud_step(i if j == 0 else item)
                 t2 = time.perf_counter()
                 if j in only:
                     if benchmark:
@@ -511,6 +509,7 @@ def grab_asr_databunch(
                         print("item info:", desc)
                         try:
                             item.show()
+                            plt.show()
                         except:
                             pass
         if benchmark:

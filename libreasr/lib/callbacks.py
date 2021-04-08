@@ -2,6 +2,8 @@ import contextlib
 from types import MethodType
 import traceback
 
+import torch
+
 from fastai.learner import Callback, CancelBatchException
 from fastai.callback.fp16 import MixedPrecision
 from fastai.torch_core import rank_distrib
@@ -20,9 +22,14 @@ class GradAccumCallback(Callback):
         self.num_batches = num_batches
 
     def after_backward(self):
+        # increment
+        self.count += 1
+
         # skip opt step if applicable
         if (self.count % self.num_batches) == 0:
             # do optimizer step
+            # if (self.count % 200) == 0:
+            #     print(torch.cuda.memory_summary())
             pass
         else:
             # skip optimizer step
@@ -213,18 +220,17 @@ class Tensorboard(Callback):
                 self.writer.add_scalar("loss/train", loss, self.train_batch_count)
             except:
                 pass
-            if not self.ddp:
-                self.writer.add_scalar(
-                    "data/seqlen/x", self.learn.xb[0][0].size(1), self.train_batch_count
-                )
-                self.writer.add_scalar(
-                    "data/seqlen/y", self.learn.xb[0][1].size(1), self.train_batch_count
-                )
-                self.writer.add_scalar(
-                    "data/batch_size",
-                    self.learn.xb[0][0].size(0),
-                    self.train_batch_count,
-                )
+            self.writer.add_scalar(
+                "data/seqlen/x", self.learn.xb[0][0].size(1), self.train_batch_count
+            )
+            self.writer.add_scalar(
+                "data/seqlen/y", self.learn.xb[0][1].size(1), self.train_batch_count
+            )
+            self.writer.add_scalar(
+                "data/batch_size",
+                self.learn.xb[0][0].size(0),
+                self.train_batch_count,
+            )
 
     def after_step(self):
         if self.steps % LOG_EVERY_N_STEPS == 0:

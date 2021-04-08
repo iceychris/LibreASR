@@ -65,8 +65,12 @@ torchaudio.set_audio_backend("soundfile")
 
 
 class OpenAudioSpan(Transform):
-    def __init__(self, tpls):
+    def __init__(self, tpls, pad_end, pad_factor=2.25, sr=16000, **kwargs):
         self.tpls = tpls
+        self.pad_end = pad_end
+        self.pad_factor = pad_factor
+        self.pad_tensor_full  = torch.zeros(1, int(pad_end*sr))
+        self.pad_tensor_empty = torch.zeros(1, 0)
 
     def encodes(self, i) -> AudioTensor:
         tpl = self.tpls[i]
@@ -84,20 +88,35 @@ class OpenAudioSpan(Transform):
             use_sr_csv = True
             sr = sr_csv
 
-        # crop
+        # crop slice with padding
         xstart = TupleGetter.xstart(tpl)
         if not math.isnan(xstart):
             xstart = int((xstart / 1000.0) * sr)
         else:
             xstart = 0
-        pad = int(0.5 * sr)
+        pad = int(self.pad_end * self.pad_factor * sr)
         xlen = TupleGetter.xlen(tpl)
         if int(xlen) == -1 or math.isnan(xlen):
             xlen = 800000
         else:
             xlen = int((xlen / 1000.0) * sr) + pad
         sig, sr_sig = torchaudio.load(fname, frame_offset=xstart, num_frames=xlen)
-        return AudioTensor(sig[:1, :], sr=sr_csv if use_sr_csv else sr_sig)
+
+        # crop to one channel
+        sig = sig[:1, :]
+
+        # determine padding
+        #  when available, we'll just use
+        #  the continuation of the sample
+        if xstart == 0:
+            pad_tensor = self.pad_tensor_full
+        else:
+            pad_tensor = self.pad_tensor_empty
+
+        # concat
+        sig = torch.cat([sig, pad_tensor], dim=-1)
+
+        return AudioTensor(sig, sr=sr_csv if use_sr_csv else sr_sig)
 
 
 class MyOpenAudio(Transform):
@@ -105,7 +124,7 @@ class MyOpenAudio(Transform):
 
     def __init__(self, tpls, **kwargs):
         self.tpls = tpls
-        self.oa = OpenAudioSpan(tpls)
+        self.oa = OpenAudioSpan(tpls, **kwargs)
 
     def encodes(self, i) -> AudioTensor:
         try:
@@ -134,8 +153,8 @@ class ChannelCut(Transform):
 class Resample(Transform):
     order = 2
 
-    def __init__(self, target_sr, **kwargs):
-        self.sr = target_sr
+    def __init__(self, resample_sr, **kwargs):
+        self.sr = resample_sr
 
     def encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)

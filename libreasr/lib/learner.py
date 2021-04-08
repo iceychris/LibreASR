@@ -260,7 +260,7 @@ class ASRLearner(Learner):
             loss_func=get_loss_func(
                 conf["loss"]["type"],
                 conf["cuda"]["device"],
-                conf["model"]["encoder"]["reduction_factor"],
+                conf["loss"]["reduction_factor"],
                 noisystudent=conf["training"]["noisystudent"],
                 debug=False,
                 perf=False,

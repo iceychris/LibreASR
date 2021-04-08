@@ -68,25 +68,31 @@ class Preprocessor(Module):
     def __init__(self):
         from nnAudio.Spectrogram import MelSpectrogram
 
+        sr = 8000 # 16000
+        n_mels = 64 # 128
+        n_fft = 1024 # 2048
         self.spec = MelSpectrogram(
-            sr=16000,
+            sr=sr,
             trainable_mel=True,
             trainable_STFT=True,
-            n_fft=2048,
-            n_mels=128,
-            win_length=400,
-            hop_length=160,
+            n_fft=n_fft,
+            n_mels=n_mels,
+            win_length=int(0.025 * sr),
+            hop_length=int(0.01 * sr),
         )
+        self.sr = sr
+        self.downsample = 8
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
     def forward(self, x, xl=None):
         x = self.spec(x[..., :, 0, 0]).permute(0, 2, 1).contiguous()
-        x = x.unfold(-2, 10, 8).contiguous()
+        x = x.unfold(-2, 10, self.downsample).contiguous()
         x = x.view(x.size(0), x.size(1), -1).contiguous()
         if xl is not None:
-            xl = torch.clamp(xl // (160 * 8), min=0, max=x.size(1))
+            fac = self.sr // 100
+            xl = torch.clamp(xl // (fac * self.downsample), min=1, max=x.size(1))
             return x, xl
         return x
 
@@ -209,7 +215,7 @@ class Joint(Module):
         self.reversible = reversible
         if joint_method == "add":
             input_sz = out_sz
-        elif joint_method == "concat":
+        elif joint_method == "concat" or self.joint_method == "comb":
             input_sz = 2 * out_sz
         else:
             raise Exception("No such joint_method")
@@ -232,6 +238,12 @@ class Joint(Module):
             )
             self.joint = inv_joint
         else:
+            # less memory usage
+            # self.joint = nn.Sequential(
+            #     nn.Tanh(),
+            #     nn.Linear(input_sz, vocab_sz),
+            # )
+            # custom LibreASR
             self.joint = nn.Sequential(
                 nn.Linear(input_sz, joint_sz),
                 nn.Tanh(),
@@ -256,6 +268,10 @@ class Joint(Module):
             h_enc.register_hook(lambda grad: grad / h_pred.size(1))
         if self.joint_method == "add":
             x = h_pred + h_enc
+        elif self.joint_method == "mul":
+            x = h_pred * h_enc
+        elif self.joint_method == "comb":
+            x = torch.cat((h_pred + h_enc, h_pred * h_enc), dim=-1)
         elif self.joint_method == "concat":
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
@@ -445,9 +461,12 @@ class Transducer(Module):
 
         # unpack
         x, y, xl, yl = tpl
+        # print("x", x.shape)
 
         # preprocess
         x, xl = self.preprocessor(x, xl)
+        if torch.isinf(x).any() or torch.isnan(x).any():
+            print("WARN: x is invalid after preprocessor...")
 
         # encoder
         x = x.reshape(x.size(0), x.size(1), -1)

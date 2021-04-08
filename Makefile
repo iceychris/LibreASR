@@ -145,3 +145,6 @@ distrib-debug:
 kill: distrib-kill
 distrib-kill:
 	(ps aux | grep "libreasr.ipynb" | grep -v grep | awk '{print $$2}' | xargs kill) || true
+
+kill-all:
+	(ps aux | grep "ipython3" | grep -v grep | awk '{print $$2}' | xargs kill -9) || true

@@ -16,6 +16,38 @@ RNN_TYPES = ["LSTM", "GRU", "NBRC"]
 USE_PYTORCH = True
 
 
+class ScaleNorm(nn.Module):
+    def __init__(self, dim, eps = 1e-5):
+        super().__init__()
+        self.scale = dim ** -0.5
+        self.eps = eps
+        self.g = nn.Parameter(torch.ones(1))
+
+    def forward(self, x):
+        norm = torch.norm(x, dim = -1, keepdim = True) * self.scale
+        return x / norm.clamp(min = self.eps) * self.g
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim, eps = 1e-8):
+        super().__init__()
+        self.scale = dim ** -0.5
+        self.eps = eps
+        self.g = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        norm = torch.norm(x, dim = -1, keepdim = True) * self.scale
+        return x / norm.clamp(min = self.eps) * self.g
+
+
+NORMS = {
+    "bn": nn.BatchNorm1d,
+    "ln": nn.LayerNorm,
+    "sn": ScaleNorm,
+    "rn": RMSNorm,
+}
+
+
 def get_rnn_impl(rnn_type):
     return getattr(nn, rnn_type)
 
@@ -84,10 +116,11 @@ class StackedRNN(nn.Module):
 
         # state cache (key: bs, value: state)
         self.cache = {}
+        self.reinit_cache = True
 
         # norm (BN or LN)
         self.norm = norm
-        norm_cls = nn.BatchNorm1d if norm == "bn" else nn.LayerNorm
+        norm_cls = NORMS[norm]
         self.bns = nn.ModuleList()
         for i, o in zip(self._is, self._os):
             n = norm_cls(o)
@@ -152,6 +185,9 @@ class StackedRNN(nn.Module):
             return self.rnns[i](x, s, lengths=lengths if lengths is not None else None)
 
     def forward(self, x, state=None, lengths=None):
+        if self.reinit_cache:
+            self.cache = {}
+            self.reinit_cache = False
         bs = x.size(0)
         residual = 0.0
         new_states = []

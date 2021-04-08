@@ -80,7 +80,7 @@ def get_loss_func(
 
         # preprocess inp_lens
         # factor reduction in
-        inp_lens = torch.clamp(inp_lens // reduction_factor, min=1, max=inp.size(1))
+        inp_lens = torch.clamp((inp_lens // reduction_factor) - 1, min=1, max=inp.size(1))
 
         # avoid NaN
         if zero_nan:

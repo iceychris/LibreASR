@@ -33,14 +33,22 @@ ENCODING = "utf-8"
 
 
 def resolve_csv_path(path, mode, suffix):
-    p = CSV[mode]
-    p = p.replace("train", f"{suffix}-train")
-    p = p.replace("valid", f"{suffix}-valid")
-    p = p.replace("test", f"{suffix}-test")
-    p = path / p
-    if p.exists():
-        return p
-    return path / CSV[mode]
+    if isinstance(suffix, str): suffix = [suffix]
+    ps = []
+    fixed = 0
+    for s in suffix:
+        p = CSV[mode]
+        p = p.replace("train", f"{s}-train")
+        p = p.replace("valid", f"{s}-valid")
+        p = p.replace("test", f"{s}-test")
+        p = path / p
+        if p.exists():
+            ps.append(p)
+            continue
+        if fixed == 0:
+            ps.append(path / CSV[mode])
+            fixed += 1
+    return ps
 
 
 def get_dataset_paths(conf, mode):
@@ -100,12 +108,13 @@ class ASRDatabunchBuilder:
         dfs = []
         for path in paths:
             path = Path(path)
-            q = resolve_csv_path(path, self.mode, self.suffix)
-            df = pd.read_csv(q)
-            print(f"[builder] [{self.mode}] df {q} loaded.")
-            if pcent != 1.0:
-                df = df.sample(frac=pcent, random_state=4471)
-            dfs.append(df)
+            qs = resolve_csv_path(path, self.mode, self.suffix)
+            for q in qs:
+                df = pd.read_csv(q)
+                print(f"[builder] [{self.mode}] df {q} loaded.")
+                if pcent != 1.0:
+                    df = df.sample(frac=pcent, random_state=4471)
+                dfs.append(df)
         # TODO set sort=False at some point (as it is not needed)
         self.df = pd.concat(dfs, ignore_index=True, copy=False, sort=True)
         return self
