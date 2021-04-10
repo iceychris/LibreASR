@@ -70,7 +70,7 @@ class OpenAudioSpan(Transform):
         self.tpls = tpls
         self.pad_end = pad_end
         self.pad_factor = pad_factor
-        self.pad_tensor_full  = torch.zeros(1, int(pad_end*sr))
+        self.pad_tensor_full = torch.zeros(1, int(pad_end * sr))
         self.pad_tensor_empty = torch.zeros(1, 0)
 
     def encodes(self, i) -> AudioTensor:
@@ -278,7 +278,7 @@ class MySignalShifter(Transform):
         shift_factor = random.uniform(-1, 1)
         if self.direction != 0:
             shift_factor = self.direction * abs(shift_factor)
-        
+
         # apply
         s = shift_factor * self.max_time * i.sr
         i.data = shift_signal(i.data, int(s), False)

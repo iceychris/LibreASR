@@ -69,6 +69,7 @@ class SpecAugment(Module):
     Google SpecAugment from https://arxiv.org/abs/1904.08779.
     Contains time and frequency masking.
     """
+
     def __init__(self, time_mask_n=2, time_mask_sz=4, freq_mask_n=4, freq_mask_sz=4):
         self.time_mask_n = time_mask_n
         self.time_mask_sz = time_mask_sz
@@ -76,7 +77,7 @@ class SpecAugment(Module):
         self.freq_mask_sz = freq_mask_sz
         self.start = None
         self.val = None
-    
+
     def mask_time(self, spectro, adaptive=True):
         num_masks = self.time_mask_n
         size = self.time_mask_sz
@@ -107,7 +108,7 @@ class SpecAugment(Module):
         else:
             mk_masks(0, y)
         return sg
-    
+
     def mask_freq(self, spectro):
         sg = spectro.clone()
         sg = torch.einsum("...ij->...ji", sg)
@@ -126,9 +127,9 @@ class Preprocessor(Module):
     def __init__(self):
         from nnAudio.Spectrogram import MelSpectrogram
 
-        sr = 8000 # 16000
-        n_mels = 64 # 128
-        n_fft = 1024 # 2048
+        sr = 8000  # 16000
+        n_mels = 64  # 128
+        n_fft = 1024  # 2048
         self.spec = MelSpectrogram(
             sr=sr,
             trainable_mel=True,
@@ -190,10 +191,10 @@ class Encoder(Module):
         if attention:
             self.attention = DualModeMultiHeadSelfAttention(
                 hidden_sz,
-                n_heads = 8,
-                window_size = 8,         # window size. 512 is optimal, but 256 or 128 yields good enough results
-                dropout = 0.1,           # post-attention dropout
-                exact_windowsize = True, # if this is set to true, in the causal setting, each query will see at maximum the number of keys equal to the window size
+                n_heads=8,
+                window_size=8,  # window size. 512 is optimal, but 256 or 128 yields good enough results
+                dropout=0.1,  # post-attention dropout
+                exact_windowsize=True,  # if this is set to true, in the causal setting, each query will see at maximum the number of keys equal to the window size
                 autopad=True,
             )
         else:
@@ -1354,6 +1355,7 @@ class ConformerEncoder(Module):
         hidden_conformer = 384  # hidden_sz // 2
         self.pre_proj = nn.Linear(feature_sz, hidden_conformer)
         from libreasr.lib.layers.conformer import ConformerBlock
+
         self.conformer = nn.Sequential(
             *[
                 ConformerBlock(

@@ -26,7 +26,7 @@ from IPython.core.debugger import set_trace
 # debug errors
 PRINT_DROP = False
 
-# estonian datasets 
+# estonian datasets
 ESTONIAN = [
     "estonian",
     "intervjuud",
@@ -372,10 +372,10 @@ if __name__ == "__main__":
 
             # try opening & parsing file
             try:
-                with open(label_file, 'r') as f:
+                with open(label_file, "r") as f:
                     soup = BeautifulSoup(f, "html.parser")
             except:
-                with open(label_file, 'rb') as f:
+                with open(label_file, "rb") as f:
                     soup = BeautifulSoup(f, "html.parser")
 
             # iterate through content
@@ -389,9 +389,13 @@ if __name__ == "__main__":
                         if e.name == "sync":
                             tnow = float(e["time"])
                             if t is not None:
-                                xstart, xlen = int(t*1000.), int((tnow-t)*1000.)
-                                start, end = int(t*1000.), int(tnow*1000.)
-                                if not (xstart >= duration or (end - start) <= 0.0 or len(text) < 3):
+                                xstart, xlen = int(t * 1000.0), int((tnow - t) * 1000.0)
+                                start, end = int(t * 1000.0), int(tnow * 1000.0)
+                                if not (
+                                    xstart >= duration
+                                    or (end - start) <= 0.0
+                                    or len(text) < 3
+                                ):
                                     transcripts.append((xstart, xlen, text, len(text)))
                                 text = ""
                             t = tnow

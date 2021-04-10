@@ -38,18 +38,13 @@ def print_good(p, df):
     print(f"> df loaded from {p} (len={len(df)})")
 
 
-
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=str, help="path to the dataset")
-    parser.add_argument(
-        "-i", default="", type=str, help="input csv file"
-    )
-    parser.add_argument(
-        "-o", default="", type=str, help="output csv file"
-    )
+    parser.add_argument("-i", default="", type=str, help="input csv file")
+    parser.add_argument("-o", default="", type=str, help="output csv file")
     parser.add_argument(
         "--filters",
         type=str,
@@ -111,4 +106,3 @@ if __name__ == "__main__":
 
     # save
     check_save(df_filtered, path_o)
-

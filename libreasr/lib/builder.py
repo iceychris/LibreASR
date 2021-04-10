@@ -33,7 +33,8 @@ ENCODING = "utf-8"
 
 
 def resolve_csv_path(path, mode, suffix):
-    if isinstance(suffix, str): suffix = [suffix]
+    if isinstance(suffix, str):
+        suffix = [suffix]
     ps = []
     fixed = 0
     for s in suffix:

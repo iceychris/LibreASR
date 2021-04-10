@@ -61,9 +61,7 @@ class APIHandler(tornado.web.RequestHandler):
     def initialize(self, conf):
         self.conf = conf
         info = {k: {"code": k, **v} for k, v in conf["overrides"]["languages"].items()}
-        self.langs = {
-            "languages": list(info.values())
-        }
+        self.langs = {"languages": list(info.values())}
 
     def set_default_headers(self):
         self.set_header("Content-Type", "application/json")
