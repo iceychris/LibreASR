@@ -4,6 +4,7 @@ import math
 import sys
 import os
 from typing import Tuple
+import random
 
 # fastai v2 stuff
 from fastai.torch_basics import *
@@ -24,7 +25,7 @@ from fastai.vision.models.xresnet import *
 from fastcore.transform import _TfmMeta
 
 from fastaudio.core.signal import *
-from fastaudio.augment.signal import SignalShifter, AddNoise
+from fastaudio.augment.signal import shift_signal, AddNoise
 
 import pandas as pd
 import numpy as np
@@ -263,15 +264,25 @@ class MyAddNoise(Transform):
 class MySignalShifter(Transform):
     order = 6
 
-    def __init__(self, random=True, *args, **kwargs):
+    def __init__(self, random=True, max_time=0.1, direction=1, **kwargs):
         self.random = random
-        self.tfm = SignalShifter(*args, **kwargs)
+        self.max_time = max_time
+        self.direction = direction
 
     def encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
         if not self.random:
             return i
-        return self.tfm(i)
+
+        # rng
+        shift_factor = random.uniform(-1, 1)
+        if self.direction != 0:
+            shift_factor = self.direction * abs(shift_factor)
+        
+        # apply
+        s = shift_factor * self.max_time * i.sr
+        i.data = shift_signal(i.data, int(s), False)
+        return i
 
 
 class PadderCutter(Transform):

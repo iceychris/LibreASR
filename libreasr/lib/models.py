@@ -18,7 +18,7 @@ from fastai.learner import CancelBatchException
 from IPython.core.debugger import set_trace
 
 from libreasr.lib.utils import *
-from libreasr.lib.layers import StackedRNN
+from libreasr.lib.layers import StackedRNN, DualModeMultiHeadSelfAttention
 from libreasr.lib.lm import LMFuser, LMFuserBatch
 from libreasr.lib.defaults import LM_ALPHA, LM_TEMP, MODEL_TEMP
 
@@ -63,6 +63,65 @@ class ResidualAdapter(Module):
         return x + inp
 
 
+class SpecAugment(Module):
+    """
+    A differentiable implementation of
+    Google SpecAugment from https://arxiv.org/abs/1904.08779.
+    Contains time and frequency masking.
+    """
+    def __init__(self, time_mask_n=2, time_mask_sz=4, freq_mask_n=4, freq_mask_sz=4):
+        self.time_mask_n = time_mask_n
+        self.time_mask_sz = time_mask_sz
+        self.freq_mask_n = freq_mask_n
+        self.freq_mask_sz = freq_mask_sz
+        self.start = None
+        self.val = None
+    
+    def mask_time(self, spectro, adaptive=True):
+        num_masks = self.time_mask_n
+        size = self.time_mask_sz
+        start = self.start
+        val = self.val
+        sg = spectro.clone()
+        channel_mean = sg.contiguous().view(sg.size(0), -1).mean(-1)[:, None, None]
+        mask_val = channel_mean if val is None else val
+        c, x, y = sg.shape
+
+        def mk_masks(_min, _max):
+            for _ in range(num_masks):
+                mask = torch.ones(x, size, device=spectro.device) * mask_val
+                start = random.randint(_min, _max - size)
+                if not 0 <= start <= y - size:
+                    raise ValueError(
+                        f"Start value '{start}' out of range for AudioSpectrogram of shape {sg.shape}"
+                    )
+                sg[:, :, start : start + size] = mask
+
+        if adaptive:
+            sz = 100
+            for a in range(0, y, sz):
+                _min, _max = a, min(a + sz, y)
+                if _max - _min != sz:
+                    continue
+                mk_masks(_min, _max)
+        else:
+            mk_masks(0, y)
+        return sg
+    
+    def mask_freq(self, spectro):
+        sg = spectro.clone()
+        sg = torch.einsum("...ij->...ji", sg)
+        sg = self.mask_time(sg, adaptive=False)
+        return torch.einsum("...ij->...ji", sg)
+
+    def forward(self, x):
+        if not self.training:
+            return x
+        x = self.mask_time(x)
+        x = self.mask_freq(x)
+        return x
+
+
 class Preprocessor(Module):
     def __init__(self):
         from nnAudio.Spectrogram import MelSpectrogram
@@ -79,6 +138,7 @@ class Preprocessor(Module):
             win_length=int(0.025 * sr),
             hop_length=int(0.01 * sr),
         )
+        self.specaugment = SpecAugment()
         self.sr = sr
         self.downsample = 8
 
@@ -86,7 +146,9 @@ class Preprocessor(Module):
         return [p for p in self.parameters() if p.requires_grad]
 
     def forward(self, x, xl=None):
-        x = self.spec(x[..., :, 0, 0]).permute(0, 2, 1).contiguous()
+        x = self.spec(x[..., :, 0, 0])
+        x = self.specaugment(x)
+        x = x.permute(0, 2, 1).contiguous()
         x = x.unfold(-2, 10, self.downsample).contiguous()
         x = x.view(x.size(0), x.size(1), -1).contiguous()
         if xl is not None:
@@ -108,6 +170,7 @@ class Encoder(Module):
         device="cuda:0",
         rnn_type="LSTM",
         norm="bn",
+        attention=False,
         use_tmp_state_pcent=0.9,
         **kwargs,
     ):
@@ -124,6 +187,17 @@ class Encoder(Module):
             utsp=use_tmp_state_pcent,
             norm=norm,
         )
+        if attention:
+            self.attention = DualModeMultiHeadSelfAttention(
+                hidden_sz,
+                n_heads = 8,
+                window_size = 8,         # window size. 512 is optimal, but 256 or 128 yields good enough results
+                dropout = 0.1,           # post-attention dropout
+                exact_windowsize = True, # if this is set to true, in the causal setting, each query will see at maximum the number of keys equal to the window size
+                autopad=True,
+            )
+        else:
+            self.attention = nn.Sequential()
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
             self.linear = nn.Linear(hidden_sz, out_sz)
@@ -137,6 +211,7 @@ class Encoder(Module):
         x = x.reshape((x.size(0), x.size(1), -1))
         x = self.input_norm(x)
         x, state = self.rnn_stack(x, state=state, lengths=lengths)
+        x = self.attention(x)
         x = self.drop(x)
         x = self.linear(x)
         if return_state:
