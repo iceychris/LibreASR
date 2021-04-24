@@ -1,3 +1,4 @@
+import contextlib
 import operator
 import time
 import random
@@ -21,6 +22,7 @@ from libreasr.lib.utils import *
 from libreasr.lib.layers import StackedRNN, DualModeMultiHeadSelfAttention
 from libreasr.lib.lm import LMFuser, LMFuserBatch
 from libreasr.lib.defaults import LM_ALPHA, LM_TEMP, MODEL_TEMP
+from libreasr.lib.layers.dual import DualModeConv1d
 
 
 class ResidualAdapter(Module):
@@ -70,7 +72,7 @@ class SpecAugment(Module):
     Contains time and frequency masking.
     """
 
-    def __init__(self, time_mask_n=2, time_mask_sz=4, freq_mask_n=4, freq_mask_sz=4):
+    def __init__(self, time_mask_n=2, time_mask_sz=4, freq_mask_n=4, freq_mask_sz=2):
         self.time_mask_n = time_mask_n
         self.time_mask_sz = time_mask_sz
         self.freq_mask_n = freq_mask_n
@@ -124,24 +126,31 @@ class SpecAugment(Module):
 
 
 class Preprocessor(Module):
-    def __init__(self):
+    def __init__(
+        self,
+        sr=16000,
+        n_mels=80,
+        n_fft=1024,
+        downsample=8,
+        stack=8,
+        trainable=False,
+        **kwargs,
+    ):
         from nnAudio.Spectrogram import MelSpectrogram
 
-        sr = 8000  # 16000
-        n_mels = 64  # 128
-        n_fft = 1024  # 2048
         self.spec = MelSpectrogram(
             sr=sr,
-            trainable_mel=True,
-            trainable_STFT=True,
+            trainable_mel=trainable,
+            trainable_STFT=trainable,
             n_fft=n_fft,
             n_mels=n_mels,
             win_length=int(0.025 * sr),
             hop_length=int(0.01 * sr),
         )
-        self.specaugment = SpecAugment()
+        self.specaugment = SpecAugment(**kwargs)
         self.sr = sr
-        self.downsample = 8
+        self.downsample = downsample
+        self.stack = stack
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
@@ -150,7 +159,7 @@ class Preprocessor(Module):
         x = self.spec(x[..., :, 0, 0])
         x = self.specaugment(x)
         x = x.permute(0, 2, 1).contiguous()
-        x = x.unfold(-2, 10, self.downsample).contiguous()
+        x = x.unfold(-2, self.stack, self.downsample).contiguous()
         x = x.view(x.size(0), x.size(1), -1).contiguous()
         if xl is not None:
             fac = self.sr // 100
@@ -166,6 +175,8 @@ class Encoder(Module):
         hidden_sz,
         out_sz,
         dropout=0.01,
+        dropout_input=0.0,
+        dropout_inner=0.0,
         num_layers=2,
         trace=True,
         device="cuda:0",
@@ -176,6 +187,7 @@ class Encoder(Module):
         **kwargs,
     ):
         self.num_layers = num_layers
+        self.drop_input = nn.Dropout(dropout_input)
         self.input_norm = nn.LayerNorm(feature_sz)
         self.rnn_stack = StackedRNN(
             feature_sz,
@@ -187,6 +199,7 @@ class Encoder(Module):
             rezero=False,
             utsp=use_tmp_state_pcent,
             norm=norm,
+            dropout=dropout_inner,
         )
         if attention:
             self.attention = DualModeMultiHeadSelfAttention(
@@ -210,6 +223,7 @@ class Encoder(Module):
 
     def forward(self, x, state=None, lengths=None, return_state=False):
         x = x.reshape((x.size(0), x.size(1), -1))
+        x = self.drop_input(x)
         x = self.input_norm(x)
         x, state = self.rnn_stack(x, state=state, lengths=lengths)
         x = self.attention(x)
@@ -250,6 +264,7 @@ class Predictor(Module):
             rezero=False,
             utsp=use_tmp_state_pcent,
             norm=norm,
+            dropout=0.0,
         )
         self.drop = nn.Dropout(dropout)
         if not hidden_sz == out_sz:
@@ -380,7 +395,7 @@ class RNNTLoss(Module):
     def __init__(self, reduction=1.0, zero_nan=False):
         from warp_rnnt import rnnt_loss
 
-        self.loss = partial(rnnt_loss, average_frames=False)
+        self.loss = partial(rnnt_loss, average_frames=False, fastemit_lambda=0.004)
         self.reduction = reduction
         self.zero_nan = zero_nan
 
@@ -398,6 +413,20 @@ class RNNTLoss(Module):
             x = torch.where(torch.isnan(x), torch.zeros_like(x), x)
 
         return self.loss(x, y, xl, yl)
+
+
+class Benchmark(object):
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        torch.cuda.synchronize()
+        self.start = time.time()
+
+    def __exit__(self, type, value, traceback):
+        torch.cuda.synchronize()
+        now = time.time()
+        print(f"{self.name}: {now - self.start:.3f}s")
 
 
 class Transducer(Module):
@@ -419,30 +448,38 @@ class Transducer(Module):
         act=F.relu,
         use_tmp_bos=True,
         use_tmp_bos_pcent=0.99,
+        preprocessor_kwargs={},
         encoder_kwargs={},
         predictor_kwargs={},
-        joint=True,
+        enable_encoder=True,
+        enable_predictor=True,
+        enable_joint=True,
         joint_reversible=False,
         learnable_stft=False,
         device="cpu",
         loss=False,
+        benchmark=False,
         **kwargs,
     ):
-        self.preprocessor = Preprocessor() if learnable_stft else Noop()
-        self.encoder = eval(encoder_kwargs["name"])(
-            feature_sz,
-            hidden_sz=hidden_sz,
-            out_sz=out_sz,
-            **encoder_kwargs,
+        self.preprocessor = (
+            Preprocessor(**preprocessor_kwargs) if learnable_stft else Noop()
         )
-        self.predictor = eval(predictor_kwargs["name"])(
-            vocab_sz,
-            embed_sz=embed_sz,
-            hidden_sz=hidden_sz,
-            out_sz=out_sz,
-            **predictor_kwargs,
-        )
-        if joint:
+        if enable_encoder:
+            self.encoder = eval(encoder_kwargs["name"])(
+                feature_sz,
+                hidden_sz=hidden_sz,
+                out_sz=out_sz,
+                **encoder_kwargs,
+            )
+        if enable_predictor:
+            self.predictor = eval(predictor_kwargs["name"])(
+                vocab_sz,
+                embed_sz=embed_sz,
+                hidden_sz=hidden_sz,
+                out_sz=out_sz,
+                **predictor_kwargs,
+            )
+        if enable_joint:
             self.joint = Joint(
                 out_sz, joint_sz, vocab_sz, joint_method, reversible=joint_reversible
             )
@@ -458,10 +495,8 @@ class Transducer(Module):
         self.device = device
         self.lm = None
         self.learnable_stft = learnable_stft
-        if loss:
-            self.loss = RNNTLoss()
-        else:
-            self.loss = None
+        self.loss = RNNTLoss() if loss else None
+        self.ctx = Benchmark if benchmark else contextlib.suppress
 
     @staticmethod
     def from_config(conf, lang, lm=None, cls=None):
@@ -483,9 +518,12 @@ class Transducer(Module):
             raw_audio=False,
             use_tmp_bos=conf["model"]["use_tmp_bos"],
             use_tmp_bos_pcent=conf["model"]["use_tmp_bos_pcent"],
+            preprocessor_kwargs=conf["model"]["preprocessor"],
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
-            joint=conf["model"]["joint"].get("enable", True),
+            enable_encoder=conf["model"].get("enable_encoder", True),
+            enable_predictor=conf["model"].get("enable_predictor", True),
+            enable_joint=conf["model"].get("enable_joint", True),
             joint_reversible=conf["model"]["joint"]["reversible"],
             learnable_stft=conf["model"]["learnable_stft"],
             device=conf["cuda"]["device"],
@@ -539,13 +577,15 @@ class Transducer(Module):
         # print("x", x.shape)
 
         # preprocess
-        x, xl = self.preprocessor(x, xl)
-        if torch.isinf(x).any() or torch.isnan(x).any():
-            print("WARN: x is invalid after preprocessor...")
+        with self.ctx("preprocessor"):
+            x, xl = self.preprocessor(x, xl)
+            if torch.isinf(x).any() or torch.isnan(x).any():
+                print("WARN: x is invalid after preprocessor...")
 
         # encoder
-        x = x.reshape(x.size(0), x.size(1), -1)
-        encoder_out = self.encoder(x, lengths=xl)
+        with self.ctx("encoder"):
+            x = x.reshape(x.size(0), x.size(1), -1)
+            encoder_out = self.encoder(x, lengths=xl)
 
         # N: batch size
         # T: n frames (time)
@@ -553,30 +593,36 @@ class Transducer(Module):
         N, T, H = encoder_out.size()
 
         # predictor
-        # concat first bos (yconcat is y shifted right by 1)
-        bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
-        yconcat = torch.cat((bos, y), dim=1)
-        # yl here because we want to omit the last label
-        # in the resulting state (we had (yl + 1))
-        predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
-        U = predictor_out.size(1)
+        with self.ctx("predictor"):
+            # concat first bos (yconcat is y shifted right by 1)
+            bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
+            yconcat = torch.cat((bos, y), dim=1)
+            # yl here because we want to omit the last label
+            # in the resulting state (we had (yl + 1))
+            predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
+            U = predictor_out.size(1)
 
         # expand:
         # we need to pass [N, T, U, H] to the joint network
         # NOTE: we might want to not include padding here?
-        M = max(T, U)
-        sz = (N, T, U, H)
-        encoder_out = encoder_out.unsqueeze(2).expand(sz).contiguous()
-        predictor_out = predictor_out.unsqueeze(1).expand(sz).contiguous()
-        # print(encoder_out.shape, predictor_out.shape)
+        with self.ctx("expand"):
+            M = max(T, U)
+            sz = (N, T, U, H)
+            encoder_out = encoder_out.unsqueeze(2).expand(sz).contiguous()
+            predictor_out = predictor_out.unsqueeze(1).expand(sz).contiguous()
+            # print(encoder_out.shape, predictor_out.shape)
 
         # joint & project
-        joint_out = self.joint(predictor_out, encoder_out, softmax=softmax, log=True)
-        if self.loss is None or return_logits:
-            return joint_out
+        with self.ctx("joint"):
+            joint_out = self.joint(
+                predictor_out, encoder_out, softmax=softmax, log=True
+            )
+            if self.loss is None or return_logits:
+                return joint_out
 
         # calc loss
-        loss = self.loss(joint_out, y, xl, yl)
+        with self.ctx("loss"):
+            loss = self.loss(joint_out, y, xl, yl)
         return loss
 
     def transcribe_batch(
@@ -1081,7 +1127,7 @@ class QuantizedTransducer(Transducer):
         return self
 
 
-def masked_mean(t, mask, dim=1, thresh=0.05, random=False):
+def masked_mean(t, mask, dim=1, thresh=0.5, random=False):
     if random:
         r = torch.zeros(t.size(dim), dtype=t.dtype, device=t.device).uniform_() > thresh
         r[0] = 1
@@ -1122,16 +1168,23 @@ class ContrastiveTransducer(Transducer):
         hidden_sz=1024,
         cache_sz=128,
         modalities=2,
+        mode="simcse",  # simcse or clip
+        random_masking=True,
         **kwargs,
     ):
         a, b = hidden_sz, hidden_sz
-        self.latents = nn.ModuleList(
-            [nn.Linear(a, b, bias=False) for _ in range(modalities)]
-        )
+        if not mode == "simcse":
+            self.latents = nn.ModuleList([nn.Sequential()])
+        else:
+            self.latents = nn.ModuleList(
+                [nn.Linear(a, b, bias=False) for _ in range(modalities)]
+            )
         temps = 1 if modalities == 2 else 3
         self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
         self.cache_sz = cache_sz
         self.modalities = modalities
+        self.mode = mode
+        self.random_masking = random_masking
         self.cache = [[] for _ in range(modalities)]
         super().__init__(*args, **kwargs)
 
@@ -1141,6 +1194,12 @@ class ContrastiveTransducer(Transducer):
         return Transducer.from_config(conf, lang, lm, cls)
 
     def param_groups(self):
+        if self.mode == "simcse":
+            return [
+                [self.temperature],
+                self.preprocessor.param_groups(),
+                self.encoder.param_groups(),
+            ]
         return [
             [
                 self.temperature,
@@ -1186,58 +1245,91 @@ class ContrastiveTransducer(Transducer):
             # [N, T, H, W] -> [N, T, H]
             x = x.reshape(x.size(0), x.size(1), -1)
 
-            # encoder
-            encoder_out = self.encoder(x, lengths=xl)
+            # simcse specific
+            if self.mode == "simcse":
 
-            # N: batch size
-            # T: n frames (time)
-            # H: hidden features
-            N, T, H = encoder_out.size()
+                # encoder
+                r1 = self.encoder(x, lengths=xl)
+                r2 = self.encoder(x, lengths=xl)
 
-            # predictor
-            # concat first bos (yconcat is y shifted right by 1)
-            bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
-            yconcat = torch.cat((bos, y), dim=1)
-            # yl here because we want to omit the last label
-            # in the resulting state (we had (yl + 1))
-            predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
-            U = predictor_out.size(1)
+                # N: batch size
+                # T: n frames (time)
+                # H: hidden features
+                N, T, H = r1.size()
 
-            ###
-            # following lucidrains CLIP model:
-            #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
-            ###
+                ###
+                # following lucidrains CLIP model:
+                #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
+                ###
 
-            # create masks
-            emask = (
-                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
-            )
-            pmask = (
-                torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
-            )
+                # create masks
+                r1mask = (
+                    torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
+                    < xl[:, None]
+                )
+                r2mask = r1mask
+
+            else:
+
+                # encoder
+                r1 = self.encoder(x, lengths=xl)
+
+                # N: batch size
+                # T: n frames (time)
+                # H: hidden features
+                N, T, H = r1.size()
+
+                # predictor
+                # concat first bos (yconcat is y shifted right by 1)
+                bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
+                yconcat = torch.cat((bos, y), dim=1)
+                # yl here because we want to omit the last label
+                # in the resulting state (we had (yl + 1))
+                r2, _ = self.predictor(yconcat, lengths=yl + 1)
+                U = r2.size(1)
+
+                ###
+                # following lucidrains CLIP model:
+                #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
+                ###
+
+                # create masks
+                r1mask = (
+                    torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
+                    < xl[:, None]
+                )
+                r2mask = (
+                    torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :]
+                    < yl[:, None]
+                )
 
             # reduce
-            e = masked_mean(encoder_out, emask, dim=1, random=self.training)
-            p = masked_mean(predictor_out, pmask, dim=1, random=self.training)
+            r1 = masked_mean(
+                r1, r1mask, dim=1, random=self.random_masking and self.training
+            )
+            r2 = masked_mean(
+                r2, r2mask, dim=1, random=self.random_masking and self.training
+            )
 
             # project
-            e = self.latents[0](e)
-            p = self.latents[1](p)
+            # if self.mode != "simcse":
+            r1 = self.latents[0](r1)
+            r2 = self.latents[1](r2)
 
             # normalize
-            e, p = map(lambda t: F.normalize(t, p=2, dim=-1), (e, p))
+            r1, r2 = map(lambda t: F.normalize(t, p=2, dim=-1), (r1, r2))
 
             # cache for later
             # and extend batch
-            e, p = self.cache_and_extend(e, p)
-            N = e.size(0)
+            r1, r2 = self.cache_and_extend(r1, r2)
+            N = r1.size(0)
 
             # loss
             temp = self.temperature.exp()
-            sim = einsum("i d, j d -> i j", e, p) * temp
+            sim = einsum("i d, j d -> i j", r1, r2) * temp
             labels = torch.arange(N, device=x.device)
             if return_logits:
-                return e, p, sim, labels
+                return r1, r2, sim, labels
 
             # calculate losses
             l1 = F.cross_entropy(sim, labels)
@@ -1296,9 +1388,15 @@ class ContrastiveTransducer(Transducer):
             )
 
             # reduce
-            a = masked_mean(a, amask, dim=1, random=self.training)
-            b = masked_mean(b, bmask, dim=1, random=self.training)
-            c = masked_mean(c, cmask, dim=1, random=self.training)
+            a = masked_mean(
+                a, amask, dim=1, random=self.random_masking and self.training
+            )
+            b = masked_mean(
+                b, bmask, dim=1, random=self.random_masking and self.training
+            )
+            c = masked_mean(
+                c, cmask, dim=1, random=self.random_masking and self.training
+            )
 
             # project
             a = self.latents[0](a)
@@ -1335,6 +1433,64 @@ class ContrastiveTransducer(Transducer):
                 print("loss", l1 + l2)
                 count += 2
             return loss / count
+
+
+class LinearTransformerEncoder(Module):
+    def __init__(
+        self,
+        feature_sz,
+        hidden_sz,
+        out_sz,
+        dropout=0.01,
+        num_layers=6,
+        trace=True,
+        device="cuda:0",
+        use_tmp_state_pcent=0.9,
+        **kwargs,
+    ):
+        self.num_layers = num_layers
+        self.input_norm = nn.LayerNorm(feature_sz)
+        # self.pre_proj = DualModeConv1d(feature_sz, hidden_sz, 3)
+        self.pre_proj = nn.Linear(feature_sz, hidden_sz)
+        from fast_transformers.builders import (
+            TransformerEncoderBuilder,
+            RecurrentEncoderBuilder,
+        )
+        from fast_transformers.utils import make_mirror
+        from fast_transformers.masking import TriangularCausalMask
+
+        n_heads = 16
+        params = dict(
+            attention_type="causal-linear",
+            n_layers=num_layers,
+            n_heads=n_heads,
+            feed_forward_dimensions=hidden_sz,
+            query_dimensions=hidden_sz // n_heads,
+            value_dimensions=hidden_sz // n_heads,
+        )
+        self.transformer = TransformerEncoderBuilder.from_dictionary(params).get()
+        self.recurrent_transformer = RecurrentEncoderBuilder.from_dictionary(
+            params
+        ).get()
+        make_mirror(self.transformer, self.recurrent_transformer)
+        self.tcm = TriangularCausalMask
+        self.post_proj = nn.Linear(hidden_sz, out_sz)
+
+    def param_groups(self):
+        return [p for p in self.parameters() if p.requires_grad]
+
+    def forward(self, x, state=None, lengths=None, return_state=False):
+        x = x.reshape((x.size(0), x.size(1), -1))
+        x = self.input_norm(x)
+        x = self.pre_proj(x)
+        if state is None:
+            x = self.transformer(x, attn_mask=self.tcm(x.size(0), device=x.device))
+        else:
+            raise NotImplementedError("recurrent transformer not implemented")
+        x = self.post_proj(x)
+        if return_state:
+            return x, state
+        return x
 
 
 class ConformerEncoder(Module):

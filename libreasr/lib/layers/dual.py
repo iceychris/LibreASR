@@ -13,18 +13,31 @@ import torch.nn.functional as F
 
 
 class DualModeConv1d(nn.Module):
-    def __init__(self, chan_in, chan_out, kernel_size):
+    def __init__(self, chan_in, chan_out, kernel_size, **kwargs):
+        """
+        Dialated Convolution with input [N, T, C].
+        Permutes to [N, C, T], performs convolution
+        with automatic front padding and permutes back.
+        """
         super().__init__()
         k = kernel_size
         assert k % 2 != 0 and k >= 3
         self.k = k
-        self.mask = (torch.arange(k) <= k // 2).expand(chan_in, chan_out, k)
-        self.conv = nn.Conv1d(chan_in, chan_out, kernel_size)
+        self.padding = k - 1
+        self.mask = (torch.arange(k) <= k // 2).expand(chan_out, chan_in, k)
+        self.conv = nn.Conv1d(chan_in, chan_out, kernel_size, **kwargs)
 
-    def forward(self, x, stream=True):
+    def forward(self, x, stream=True, autopad=True):
         if stream:
+            # autopad front
+            if autopad:
+                x = F.pad(x, (0, 0, self.padding, 0), "constant", 0)
+
+            # permute
+            x = x.permute(0, 2, 1)
+
             # apply mask & convolve
-            weight = self.conv.weight * self.mask
+            weight = self.conv.weight * self.mask.to(x.device)
             x = F.conv1d(
                 x,
                 weight,
@@ -33,8 +46,8 @@ class DualModeConv1d(nn.Module):
                 self.conv.padding,
                 self.conv.dilation,
                 self.conv.groups,
-            )
-            return x
+            ).permute(0, 2, 1)
+            return x.contiguous()
         return self.conv(x)
 
 

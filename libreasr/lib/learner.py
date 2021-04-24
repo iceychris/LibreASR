@@ -171,6 +171,8 @@ class ASRLearner(Learner):
         espm_kwargs = conf.get("espm_kwargs", {})
         espm_kwargs.update({"lang_name": lang_name})
         use_persistence_cbs = not ddp or rank_distrib() == 0
+        clip = conf.get("training", {}).get("clip-grad-norm", 0.0)
+        use_tensorboard = conf["tensorboard"]
 
         # define callbacks
         cbs = [
@@ -186,6 +188,7 @@ class ASRLearner(Learner):
                     espm_kwargs=espm_kwargs,
                 )
             )
+            cbs.append(SaveModelCallback(fname="best-validation-loss", with_opt=True))
         optim = conf["training"]["optimizer"].lower()
         if optim == "ranger":
             opt_func = ranger
@@ -237,14 +240,19 @@ class ASRLearner(Learner):
 
         else:
             raise Exception("No such optimizer")
+
+        # Gradient Accumulation
+        #  & Gradient Clipping
         if acnb > 1 and not optim == "adahessian":
             if ddp:
                 gac = GradAccumCallbackDDP
             else:
                 gac = GradAccumCallback
-            cbs.append(gac(num_batches=acnb))
+            cbs.append(gac(num_batches=acnb, clip=clip))
+
+        # Tensorboard
         extra_cbs = []
-        if conf["tensorboard"]:
+        if use_tensorboard:
             if use_persistence_cbs:
                 _tb = partial(
                     Tensorboard,
@@ -254,13 +262,13 @@ class ASRLearner(Learner):
                     ddp=ddp,
                 )()
                 extra_cbs.append(_tb)
+
         learn = Learner(
             db,
             m,
             loss_func=get_loss_func(
                 conf["loss"]["type"],
                 conf["cuda"]["device"],
-                conf["loss"]["reduction_factor"],
                 noisystudent=conf["training"]["noisystudent"],
                 debug=False,
                 perf=False,

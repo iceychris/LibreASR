@@ -93,6 +93,7 @@ class StackedRNN(nn.Module):
         rezero=False,
         utsp=0.9,
         norm="bn",
+        dropout=0.1,
     ):
         super().__init__()
         self.batch_first = batch_first
@@ -140,6 +141,13 @@ class StackedRNN(nn.Module):
             r = rnn_cls(i, o, batch_first=self.batch_first)
             r.flatten_parameters()
             self.rnns.append(r)
+
+        # dropouts
+        self.dropout = dropout
+        if dropout > 0.0:
+            self.dropouts = nn.ModuleList(
+                [nn.Dropout(dropout) for _ in range(num_layers)]
+            )
 
     def forward_one_rnn(
         self, x, i, state=None, should_use_tmp_state=False, lengths=None
@@ -234,6 +242,10 @@ class StackedRNN(nn.Module):
                 x = x.permute(0, 2, 1)
             else:
                 x = self.bns[i](x)
+
+            # apply dropout
+            if self.dropout > 0.0:
+                x = self.dropouts[i](x)
 
             # apply residual
             if self.rezero:

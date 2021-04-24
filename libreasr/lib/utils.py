@@ -177,7 +177,15 @@ def tensorize(x):
 def cudaize(x):
     if torch.is_tensor(x):
         return x.cuda()
-    return [cudaize(t) for t in x]
+    if isinstance(x, tuple):
+        return (cudaize(t) for t in x)
+    if isinstance(x, list):
+        return [cudaize(t) for t in x]
+    if isinstance(x, dict):
+        for k, v in x.items():
+            x[k] = cudaize(v)
+        return x
+    return x
 
 
 def standardize(t, eps=1e-5):

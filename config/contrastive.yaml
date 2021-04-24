@@ -144,8 +144,8 @@ datasets:
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 0.001 # 0.75 # 0.25  # 0.75  # 0.5  # 0.5  # 1.0  # 0.25 # 1.0
-    valid: 0.1   # 1.0  # 1.0   # 1.0  # 1.0  # 1.0  # 1.0
+    train: 0.01  # 0.001 # 0.75 # 0.25  # 0.75  # 0.5  # 0.5  # 1.0  # 0.25 # 1.0
+    valid: 1.0   # 1.0  # 1.0   # 1.0  # 1.0  # 1.0  # 1.0
     test: 1.0
 
 
@@ -199,7 +199,7 @@ y_max: 250 # 150 # 350 # 180 # 120 # 80 # 130 # 80 # 60 # 100
 y_max_words: 100
 
 # which dataset to use
-suffix: "cat-2468" # "cat-longy" # "cat-mix" # cat-4
+suffix: "" # "cat-longy" # "cat-mix" # cat-4
 
 # dataloader settings
 dataloader_args:
@@ -250,6 +250,7 @@ model:
     name: Encoder
     num_layers: 6 # 7
     rnn_type: "LSTM"
+    norm: "ln"
     dropout: 0.05
     reduction_factor: 1
     reduction_factors: []
@@ -257,6 +258,7 @@ model:
   predictor:
     name: Predictor
     rnn_type: "LSTM"
+    norm: "ln"
     num_layers: 2
     dropout: 0.05
     use_tmp_state_pcent: 0.0 # 0.99
@@ -264,8 +266,10 @@ model:
     enable: false
     method: "concat"
     dropout: 0.0
+    reversible: false
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
+  learnable_stft: true
   # contrastive-specific
   extra:
     cache_sz: 0
@@ -355,7 +359,7 @@ tests_per_epoch: 0 # 8
 
 # language model
 lm:
-  enable: true
+  enable: false
   vocab_sz: 2048
   embed_sz: 1024
   hidden_sz: 1024
@@ -451,3 +455,12 @@ overrides:
       device: "cpu"
     # 10ms -> 160
     chunk: 160
+
+quantization:
+  engine: "fbgemm" # "qnnpack" or "fbgemm"
+  model:
+    pre: false
+    post: false
+  lm:
+    pre: false
+    post: false

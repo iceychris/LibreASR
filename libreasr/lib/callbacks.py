@@ -14,12 +14,18 @@ from torch.utils.tensorboard import SummaryWriter
 from libreasr.lib.eval import eval_speech_model
 
 
+def maybe_clip_grad_norm(model, clip):
+    if clip > 0.0:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip, 2.0)
+
+
 class GradAccumCallback(Callback):
     count = 0
     run_after = MixedPrecision
 
-    def __init__(self, num_batches):
+    def __init__(self, num_batches, clip):
         self.num_batches = num_batches
+        self.clip = clip
 
     def after_backward(self):
         # increment
@@ -30,7 +36,7 @@ class GradAccumCallback(Callback):
             # do optimizer step
             # if (self.count % 200) == 0:
             #     print(torch.cuda.memory_summary())
-            pass
+            maybe_clip_grad_norm(self.model, self.clip)
         else:
             # skip optimizer step
             raise CancelBatchException()
@@ -40,8 +46,9 @@ class GradAccumCallbackDDP(Callback):
     count = 0
     run_after = DistributedTrainer  # MixedPrecision
 
-    def __init__(self, num_batches):
+    def __init__(self, num_batches, clip):
         self.num_batches = num_batches
+        self.clip = clip
 
     def before_fit(self):
         self.cm_do_sync = contextlib.nullcontext
@@ -81,7 +88,7 @@ class GradAccumCallbackDDP(Callback):
         # skip opt step if applicable
         if (self.count % self.num_batches) == 0:
             # do optimizer step
-            pass
+            maybe_clip_grad_norm(self.model, self.clip)
         else:
             # skip optimizer step
             raise CancelBatchException()
@@ -166,16 +173,13 @@ class EvalSpeechModel(Callback):
 
 FLUSH_SECS = 120
 LOG_EVERY_N_STEPS = 16
+LOG_DEBUG_EVERY_N_STEPS = 256
 
 
 class Tensorboard(Callback):
     toward_end = True
 
     def __init__(self, name=None, wandb=True, test=True, ddp=False, *args, **kwargs):
-        if name:
-            self.writer = SummaryWriter(flush_secs=FLUSH_SECS, log_dir="runs/" + name)
-        else:
-            self.writer = SummaryWriter(flush_secs=FLUSH_SECS)
         self.tb_name = name
         self.tb_use_wandb = wandb
         self.is_fitting = False
@@ -184,13 +188,29 @@ class Tensorboard(Callback):
         self.test = test
         self.ddp = ddp
         self.steps = 0
+        self.logging_initialized = False
 
     def before_fit(self):
-        if self.tb_use_wandb:
-            import wandb
 
-            wandb.init(project="asr", sync_tensorboard=True)
-            wandb.watch(self.learn.model)
+        # setup logging
+        if not self.logging_initialized:
+
+            # setup wandb
+            if self.tb_use_wandb:
+                import wandb
+
+                wandb.init(
+                    project="LibreASR",
+                    entity="iceychris",
+                    sync_tensorboard=True,
+                    config=self.learn.conf,
+                )
+
+            # setup tensorboard
+            self.writer = SummaryWriter(flush_secs=FLUSH_SECS)
+
+            self.logging_initialized = True
+
         self.is_fitting = True
         self.train_batch_count = 0
         self.valid_batch_count = 0
@@ -232,6 +252,25 @@ class Tensorboard(Callback):
                 self.train_batch_count,
             )
 
+    def _log_debugging(self, func, title="parameters", hist=False):
+        for name, param in self.model.named_parameters():
+
+            # prepare tensor
+            param = func(param)
+            m, s = param.mean().item(), param.std().item()
+
+            # save hist
+            if hist:
+                param = param.detach().cpu().float()
+                tag = f"{title}/{name}"
+                self.writer.add_histogram(tag, param, self.train_batch_count)
+
+            # save mean & std
+            tag = f"debugging-{title}-mean/{name}"
+            self.writer.add_scalar(tag, m, self.train_batch_count)
+            tag = f"debugging-{title}-std/{name}"
+            self.writer.add_scalar(tag, s, self.train_batch_count)
+
     def after_step(self):
         if self.steps % LOG_EVERY_N_STEPS == 0:
             hyps = self.learn.opt.hypers[0]
@@ -242,6 +281,10 @@ class Tensorboard(Callback):
                     extra = self.learn.opt.opt.extra
                     for k, v in extra.items():
                         self.writer.add_scalar("extra/" + k, v, self.train_batch_count)
+        if self.steps % LOG_DEBUG_EVERY_N_STEPS == 0:
+            self._log_debugging(lambda x: x, "parameters")
+            self._log_debugging(lambda x: x.grad, "gradients")
+
         self.steps += 1
 
     def after_fit(self):

@@ -28,15 +28,26 @@ def update(d, u):
 
 
 def open_config(*args, path="./config/testing.yaml", **kwargs):
-    path = Path(path)
-    if not os.path.exists(path):
-        path = ".." / path
-    with open(path, "r") as stream:
-        try:
-            obj = yaml.safe_load(stream)
-            return obj
-        except yaml.YAMLError as exc:
-            print(exc)
+    # load
+    objs = []
+    conf = {}
+    if not isinstance(path, (list, tuple)):
+        path = [path]
+    for p in path:
+        p = Path(p)
+        if not os.path.exists(p):
+            p = ".." / p
+        with open(p, "r") as stream:
+            try:
+                obj = yaml.safe_load(stream)
+                objs.append(obj)
+            except yaml.YAMLError as exc:
+                print(exc)
+
+    # merge
+    for obj in objs:
+        update(conf, obj)
+    return conf
 
 
 def parse_transforms(conf, inference):

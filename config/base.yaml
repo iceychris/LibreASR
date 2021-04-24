@@ -23,7 +23,13 @@ transforms:
       wrap: true
       partial: true
       args:
-        delta: 20
+        delta: 10
+    - name: MySignalShifter
+      wrap: true
+      partial: true
+      args:
+        max_time: 0.1
+        direction: 1
  
     # bounds
     - name: PadderCutter
@@ -187,8 +193,8 @@ datasets:
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 1.0  # 1.0  # 0.25 # 1.0
-    valid: 1.0  # 1.0  # 1.0
+    train: 1.0  # 0.25 # 1.0
+    valid: 1.0  # 1.0
     test: 1.0
 
 
@@ -235,7 +241,7 @@ apply_limits: True
 # ------------- regular training   -------------
 # audio length [seconds]
 almins: 0.5
-almaxs: 8.0 # 15.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
+almaxs: 15.0 # 8.0 # 10.0 # 8.0 # 6.0 # 9.0
 
 # label length [characters]
 y_min: 1
@@ -251,21 +257,21 @@ y_max_words: 200
 
 
 # which dataset to use
-suffix: "" # "cat-2468-a" # ["cat-stream", "cat-2468-a"] # , "cat-2468-b", "cat-2468-c"]
+suffix: "" # ["cat-2468-a", "cat-2468-b", "cat-2468-c"]
 
 # dataloader settings
 dataloader_args:
 
   # maximum batch size
-  bs_max: 64 # 48 # 128 # 64 # 32
+  bs_max: 96 # 64 # 48 # 128 # 64 # 32
 
   # batch size multiplier
-  bs_mul: 2. # 1.5 # 4. # 2. # 1.
+  bs_mul: 3. # 2. # 1.5 # 4. # 2. # 1.
 
   # prng save state path
   prng_state_path: "/home/chris"
 
-  # debugging
+  # dataloader debugging
   debug: false
 
 
@@ -281,7 +287,7 @@ cuda:
 
   # set default cuda device (to avoid errors?)
   # see: https://discuss.pytorch.org/t/runtime-error-77/9392/9?u=sbelharbi
-  device: "cuda:0"
+  device: "cuda:1"
 
 
 ###
@@ -299,25 +305,34 @@ cpu:
 model:
   name: Transducer
   # feature_sz: 1280
-  feature_sz: 640
+  feature_sz: 800
   embed_sz: 512
-  hidden_sz: 1024
-  out_sz: 1024
-  joint_sz: 1024
+  hidden_sz: 512 # 1024
+  out_sz: 512 # 1024
+  joint_sz: 512 # 1024
   vocab_sz: 2048
+  preprocessor:
+    sr: 8000
+    n_mels: 80 # 64
+    n_fft: 1024
+    downsample: 8
+    stack: 10
+    trainable: true
   encoder:
-    name: Encoder
+    name: LinearTransformerEncoder # Encoder
     rnn_type: "LSTM"
-    num_layers: 6
+    num_layers: 16 # 6 # 12 # 6
     norm: "ln"
     dropout: 0.05
+    dropout_inner: 0.0
     reduction_factor: 1
     reduction_factors: []
+    attention: false
     use_tmp_state_pcent: 0.0 # 0.95
   predictor:
     name: Predictor
     rnn_type: "LSTM"
-    num_layers: 2
+    num_layers: 1 # 2
     norm: "ln"
     dropout: 0.05
     use_tmp_state_pcent: 0.0 # 0.95
@@ -365,6 +380,10 @@ training:
   #  (a variant of knowledge distillation)
   noisystudent: false
 
+  # Gradient Clipping (L2-Norm)
+  #  (set to 0.0 to disable)
+  clip-grad-norm: 2.0
+
   # NativeMixedPrecision training
   mp:
     enable: false
@@ -372,7 +391,7 @@ training:
   # DistributedDataParallel
   #  (muli-gpu and/or multi-host training)
   ddp:
-    enable: true
+    enable: false
 
 
 ###
@@ -391,22 +410,14 @@ batching:
 
   # gradient accumulation (gas)
   #  (number of batches)
-  #  (regular training: 10)
-  #  (DDP training: ?)
+  #  (regular training: 20)
+  #  (DDP training: 10)
   # streaming: 50
-  accumulate: 10 # 5
+  accumulate: 32 # 20 # 10 # 5
 
 # losses
 loss:
   type: "rnnt"
-
-  # number to divide xlen by
-  #  this is usually determined
-  #  by the model architecture
-  #  and its downsampling
-  #  (RNN-T: 1)
-  #  (RNN-T with learnable stft: 1280)
-  reduction_factor: 640
 
 ## tokenization
 # for training a tokenizer on the current corpus
@@ -419,12 +430,12 @@ seed: 42
 
 # CPU workers
 #  3 -> fine for rnnt
-num_workers: 4 # 6 # 7
+num_workers: 6 # 3 # 6 # 7
 
 # testing
 tensorboard: true
-wandb: false
-tests_per_epoch: 8 # 24
+wandb: true
+tests_per_epoch: 8 # 24 # 8 # 24
 
 # eval speech model kwargs
 espm_kwargs:
