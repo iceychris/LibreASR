@@ -22,7 +22,6 @@ from libreasr.lib.utils import *
 from libreasr.lib.layers import StackedRNN, DualModeMultiHeadSelfAttention
 from libreasr.lib.lm import LMFuser, LMFuserBatch
 from libreasr.lib.defaults import LM_ALPHA, LM_TEMP, MODEL_TEMP
-from libreasr.lib.layers.dual import DualModeConv1d
 
 
 class ResidualAdapter(Module):
@@ -1161,6 +1160,31 @@ def crop(x, xl, size=2 * 16000, seq=1, random=False):
     return new_x, new_xl
 
 
+class MLP(nn.Module):
+    def __init__(self, dim, projection_size, hidden_size):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_size),
+            nn.BatchNorm1d(hidden_size),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_size, projection_size)
+        )
+
+    def forward(self, x):
+        if len(x.shape) == 2:
+            # (N x H)
+            return self.net(x)
+        else:
+            for l in self.net:
+                if isinstance(l, nn.BatchNorm1d):
+                    x = x.permute(0, 2, 1)
+                    x = l(x)
+                    x = x.permute(0, 2, 1)
+                else:
+                    x = l(x)
+            return x
+
+
 class ContrastiveTransducer(Transducer):
     def __init__(
         self,
@@ -1168,13 +1192,14 @@ class ContrastiveTransducer(Transducer):
         hidden_sz=1024,
         cache_sz=128,
         modalities=2,
-        mode="simcse",  # simcse or clip
+        mode="simsiam",  # simcse or clip or simsiam
         random_masking=True,
         **kwargs,
     ):
         a, b = hidden_sz, hidden_sz
-        if not mode == "simcse":
-            self.latents = nn.ModuleList([nn.Sequential()])
+        if mode == "simsiam":
+            self.projection = MLP(a, b, b)
+            self.prediction = MLP(a, b, b)
         else:
             self.latents = nn.ModuleList(
                 [nn.Linear(a, b, bias=False) for _ in range(modalities)]
@@ -1194,11 +1219,17 @@ class ContrastiveTransducer(Transducer):
         return Transducer.from_config(conf, lang, lm, cls)
 
     def param_groups(self):
-        if self.mode == "simcse":
+        if self.mode == "simsiam":
             return [
-                [self.temperature],
-                self.preprocessor.param_groups(),
-                self.encoder.param_groups(),
+                [
+                    *self.preprocessor.param_groups(),
+                    *self.encoder.param_groups(),
+                ],
+                [
+                    self.temperature,
+                    *list(self.projection.parameters()),
+                    *list(self.prediction.parameters()),
+                ],
             ]
         return [
             [
@@ -1227,82 +1258,75 @@ class ContrastiveTransducer(Transducer):
             return new_mods
         return new_mods
 
-    def forward(self, tpl, return_logits=False):
+    def augment(self, x, factor=0.1):
+        if self.training:
+            # add white noise
+            x = x + (torch.randn_like(x) + x.mean()) * x.std() * factor
+        return x
+
+    def simsiam_loss(self, a, b, xl=None):
+        b = b.detach()
+        a, b = map(lambda t: F.normalize(t, p=2, dim=-1), (a, b))
+        if xl is not None:
+            # sequence-wise over all logits
+            return -(a * b).sum(dim=(1, 2)) / xl
+        else:
+            # logits only
+            return -(a * b).sum(dim=-1)
+
+    def forward_simsiam(self, tpl, return_logits=False, sequence_wise=True):
         """
-        (x, y)
-        x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
-        y: N tuples (y_padded, y_lens)
+        SimSiam from https://arxiv.org/abs/2011.10566
         """
 
         # unpack
         x, y, xl, yl = tpl
 
-        if self.modalities == 2:
+        # grab augmentations
+        x1, xl1 = self.preprocessor(self.augment(x), xl)
+        x2, xl2 = self.preprocessor(self.augment(x), xl)
 
-            # preprocess signal
-            x, xl = self.preprocessor(x, xl)
+        # [N, T, H, W] -> [N, T, H]
+        x1, x2 = map(lambda x: x.reshape(x.size(0), x.size(1), -1), (x1, x2))
 
-            # [N, T, H, W] -> [N, T, H]
-            x = x.reshape(x.size(0), x.size(1), -1)
+        # encoder
+        r1 = self.encoder(x1, lengths=xl1)
+        r2 = self.encoder(x2, lengths=xl2)
 
-            # simcse specific
-            if self.mode == "simcse":
+        # N: batch size
+        # T: n frames (time)
+        # H: hidden features
+        N, T, H = r1.size()
 
-                # encoder
-                r1 = self.encoder(x, lengths=xl)
-                r2 = self.encoder(x, lengths=xl)
+        # create masks
+        r1mask = (
+            torch.arange(T, dtype=xl1.dtype, device=xl1.device)[None, :]
+            < xl1[:, None]
+        )
+        r2mask = (
+            torch.arange(T, dtype=xl2.dtype, device=xl2.device)[None, :]
+            < xl2[:, None]
+        )
 
-                # N: batch size
-                # T: n frames (time)
-                # H: hidden features
-                N, T, H = r1.size()
+        if sequence_wise:
+            # online (backbone + projection mlp)
+            r1 = self.projection(r1)
+            r2 = self.projection(r2)
 
-                ###
-                # following lucidrains CLIP model:
-                #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
-                ###
+            # target (prediction mlp)
+            r1t = self.prediction(r1)
+            r2t = self.prediction(r2)
 
-                # create masks
-                r1mask = (
-                    torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
-                    < xl[:, None]
-                )
-                r2mask = r1mask
+            # make sure irrelevant values are zero in loss
+            r1[~r1mask] = 0.
+            r2[~r2mask] = 0.
+            r1t[~r1mask] = 0.
+            r2t[~r2mask] = 0.
 
-            else:
+            # pass lengths to loss
+            xl_loss = xl1
 
-                # encoder
-                r1 = self.encoder(x, lengths=xl)
-
-                # N: batch size
-                # T: n frames (time)
-                # H: hidden features
-                N, T, H = r1.size()
-
-                # predictor
-                # concat first bos (yconcat is y shifted right by 1)
-                bos = self.grab_bos(y, yl, bs=N, device=encoder_out.device)
-                yconcat = torch.cat((bos, y), dim=1)
-                # yl here because we want to omit the last label
-                # in the resulting state (we had (yl + 1))
-                r2, _ = self.predictor(yconcat, lengths=yl + 1)
-                U = r2.size(1)
-
-                ###
-                # following lucidrains CLIP model:
-                #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
-                ###
-
-                # create masks
-                r1mask = (
-                    torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
-                    < xl[:, None]
-                )
-                r2mask = (
-                    torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :]
-                    < yl[:, None]
-                )
-
+        else:
             # reduce
             r1 = masked_mean(
                 r1, r1mask, dim=1, random=self.random_masking and self.training
@@ -1311,128 +1335,119 @@ class ContrastiveTransducer(Transducer):
                 r2, r2mask, dim=1, random=self.random_masking and self.training
             )
 
-            # project
-            # if self.mode != "simcse":
-            r1 = self.latents[0](r1)
-            r2 = self.latents[1](r2)
+            # online (backbone + projection mlp)
+            r1 = self.projection(r1)
+            r2 = self.projection(r2)
 
-            # normalize
-            r1, r2 = map(lambda t: F.normalize(t, p=2, dim=-1), (r1, r2))
+            # target (prediction mlp)
+            r1t = self.prediction(r1)
+            r2t = self.prediction(r2)
 
-            # cache for later
-            # and extend batch
-            r1, r2 = self.cache_and_extend(r1, r2)
-            N = r1.size(0)
+            # no lengths needed
+            xl_loss = None
 
-            # loss
-            temp = self.temperature.exp()
-            sim = einsum("i d, j d -> i j", r1, r2) * temp
-            labels = torch.arange(N, device=x.device)
-            if return_logits:
-                return r1, r2, sim, labels
+        # loss
+        if return_logits:
+            return r1, r2
+        loss = self.simsiam_loss(r1, r2t, xl=xl_loss) / 2. + self.simsiam_loss(r2, r1t, xl=xl_loss) / 2.
+        return loss
 
-            # calculate losses
-            l1 = F.cross_entropy(sim, labels)
-            l2 = F.cross_entropy(sim.T, labels)
-            return (l1 + l2) / 2.0
+    def forward_contrastive(self, tpl, return_logits=False):
+        """
+        A contrastive objective following CLIP.
+        https://arxiv.org/abs/2103.00020 
+        """
 
-        # N modalities
-        else:
+        # unpack
+        x, y, xl, yl = tpl
 
-            # compute two crops
-            x1, xl1 = crop(x, xl, seq=1, random=self.training)
-            x2, xl2 = crop(x, xl, seq=2, random=self.training)
+        # preprocess signal
+        x, xl = self.preprocessor(self.augment(x), xl)
 
-            # preprocess signal
-            x1, xl1 = self.preprocessor(x1, xl1)
-            x2, xl2 = self.preprocessor(x2, xl2)
+        # [N, T, H, W] -> [N, T, H]
+        x = x.reshape(x.size(0), x.size(1), -1)
 
-            # [N, T, H, W] -> [N, T, H]
-            x1 = x1.reshape(x1.size(0), x1.size(1), -1)
-            x2 = x2.reshape(x2.size(0), x2.size(1), -1)
+        # encoder
+        r1 = self.encoder(x, lengths=xl)
 
-            # encode
-            a = self.encoder(x1, lengths=xl1)
-            b = self.encoder(x2, lengths=xl2)
+        # N: batch size
+        # T: n frames (time)
+        # H: hidden features
+        N, T, H = r1.size()
 
-            # N: batch size
-            # T: n frames (time)
-            # H: hidden features
-            N, T, H = a.size()
+        # predictor
+        # concat first bos (yconcat is y shifted right by 1)
+        bos = self.grab_bos(y, yl, bs=N, device=x.device)
+        yconcat = torch.cat((bos, y), dim=1)
+        # yl here because we want to omit the last label
+        # in the resulting state (we had (yl + 1))
+        r2, _ = self.predictor(yconcat, lengths=yl + 1)
+        U = r2.size(1)
 
-            # predictor
-            # concat first bos (yconcat is y shifted right by 1)
-            bos = self.grab_bos(y, yl, bs=N, device=a.device)
-            yconcat = torch.cat((bos, y), dim=1)
-            # yl here because we want to omit the last label
-            # in the resulting state (we had (yl + 1))
-            c, _ = self.predictor(yconcat, lengths=yl + 1)
-            U = c.size(1)
+        ###
+        # following lucidrains CLIP model:
+        #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
+        ###
 
-            ###
-            # following lucidrains CLIP model:
-            #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
-            ###
+        # create masks
+        r1mask = (
+            torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
+            < xl[:, None]
+        )
+        r2mask = (
+            torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :]
+            < yl[:, None]
+        )
 
-            # create masks
-            amask = (
-                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
-                < xl1[:, None]
-            )
-            bmask = (
-                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
-                < xl2[:, None]
-            )
-            cmask = (
-                torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
-            )
+        # reduce
+        r1 = masked_mean(
+            r1, r1mask, dim=1, random=self.random_masking and self.training
+        )
+        r2 = masked_mean(
+            r2, r2mask, dim=1, random=self.random_masking and self.training
+        )
 
-            # reduce
-            a = masked_mean(
-                a, amask, dim=1, random=self.random_masking and self.training
-            )
-            b = masked_mean(
-                b, bmask, dim=1, random=self.random_masking and self.training
-            )
-            c = masked_mean(
-                c, cmask, dim=1, random=self.random_masking and self.training
-            )
+        # project
+        r1 = self.latents[0](r1)
+        r2 = self.latents[1](r2)
 
-            # project
-            a = self.latents[0](a)
-            b = self.latents[1](b)
-            c = self.latents[2](c)
+        # normalize
+        r1, r2 = map(lambda t: F.normalize(t, p=2, dim=-1), (r1, r2))
 
-            # normalize
-            a, b, c = map(lambda t: F.normalize(t, p=2, dim=-1), (a, b, c))
+        # cache for later
+        # and extend batch
+        r1, r2 = self.cache_and_extend(r1, r2)
+        N = r1.size(0)
 
-            # cache for later
-            # and extend batch
-            a, b, c = self.cache_and_extend(a, b, c)
-            N = a.size(0)
+        # loss
+        temp = self.temperature.exp()
+        sim = einsum("i d, j d -> i j", r1, r2) * temp
+        labels = torch.arange(N, device=x.device)
+        if return_logits:
+            return r1, r2, sim, labels
 
-            # similarity scores
-            temp1 = self.temperature[0].exp()
-            temp2 = self.temperature[1].exp()
-            temp3 = self.temperature[2].exp()
-            sim1 = einsum("i d, j d -> i j", a, b) * temp1
-            sim2 = einsum("i d, j d -> i j", b, c) * temp2
-            sim3 = einsum("i d, j d -> i j", c, a) * temp3
+        # calculate losses
+        l1 = F.cross_entropy(sim, labels)
+        l2 = F.cross_entropy(sim.T, labels)
+        return (l1 + l2) / 2.0
 
-            # create labels
-            labels = torch.arange(N, device=x.device).long()
-            if return_logits:
-                return (a, b, c), (sim1, sim2, sim3), labels
+    def forward(self, tpl, return_logits=False):
+        """
+        (x, y)
+        x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
+        y: N tuples (y_padded, y_lens)
+        """
 
-            # calculate losses
-            loss = torch.zeros((1,), device=x.device)
-            count = 0.0
-            for sim in (sim1, sim2, sim3):
-                l1, l2 = F.cross_entropy(sim, labels), F.cross_entropy(sim.T, labels)
-                loss += l1 + l2
-                print("loss", l1 + l2)
-                count += 2
-            return loss / count
+        # special path for simsiam
+        if self.mode == "simsiam":
+            return self.forward_simsiam(tpl, return_logits=return_logits)
+
+        # special path for contrastive
+        if self.mode == "contrastive":
+            return self.forward_contrastive(tpl, return_logits=return_logits)
+
+        # no such method
+        raise Exception(f"No such mode {self.mode}")
 
 
 class LinearTransformerEncoder(Module):
@@ -1450,7 +1465,6 @@ class LinearTransformerEncoder(Module):
     ):
         self.num_layers = num_layers
         self.input_norm = nn.LayerNorm(feature_sz)
-        # self.pre_proj = DualModeConv1d(feature_sz, hidden_sz, 3)
         self.pre_proj = nn.Linear(feature_sz, hidden_sz)
         from fast_transformers.builders import (
             TransformerEncoderBuilder,

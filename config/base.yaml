@@ -257,7 +257,7 @@ y_max_words: 200
 
 
 # which dataset to use
-suffix: "" # ["cat-2468-a", "cat-2468-b", "cat-2468-c"]
+suffix: "" # "cat-2468-a" # "" # ["cat-2468-a", "cat-2468-b", "cat-2468-c"]
 
 # dataloader settings
 dataloader_args:
@@ -287,7 +287,7 @@ cuda:
 
   # set default cuda device (to avoid errors?)
   # see: https://discuss.pytorch.org/t/runtime-error-77/9392/9?u=sbelharbi
-  device: "cuda:1"
+  device: "cuda:0"
 
 
 ###
@@ -304,26 +304,26 @@ cpu:
 
 model:
   name: Transducer
-  # feature_sz: 1280
-  feature_sz: 800
+  feature_sz: 1280
   embed_sz: 512
-  hidden_sz: 512 # 1024
-  out_sz: 512 # 1024
-  joint_sz: 512 # 1024
+  hidden_sz: 1024
+  out_sz: 1024
+  joint_sz: 1024
   vocab_sz: 2048
   preprocessor:
     sr: 8000
     n_mels: 80 # 64
     n_fft: 1024
-    downsample: 8
-    stack: 10
+    downsample: 16
+    stack: 16
     trainable: true
   encoder:
-    name: LinearTransformerEncoder # Encoder
+    name: Encoder # LinearTransformerEncoder
     rnn_type: "LSTM"
-    num_layers: 16 # 6 # 12 # 6
+    num_layers: 6 # 16
     norm: "ln"
-    dropout: 0.05
+    dropout: 0.1
+    dropout_input: 0.0
     dropout_inner: 0.0
     reduction_factor: 1
     reduction_factors: []
@@ -332,7 +332,7 @@ model:
   predictor:
     name: Predictor
     rnn_type: "LSTM"
-    num_layers: 1 # 2
+    num_layers: 2
     norm: "ln"
     dropout: 0.05
     use_tmp_state_pcent: 0.0 # 0.95

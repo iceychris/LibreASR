@@ -257,6 +257,8 @@ class Tensorboard(Callback):
 
             # prepare tensor
             param = func(param)
+            if param is None:
+                continue
             m, s = param.mean().item(), param.std().item()
 
             # save hist

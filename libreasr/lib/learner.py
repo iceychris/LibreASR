@@ -188,7 +188,7 @@ class ASRLearner(Learner):
                     espm_kwargs=espm_kwargs,
                 )
             )
-            cbs.append(SaveModelCallback(fname="best-validation-loss", with_opt=True))
+            cbs.append(SaveModelCallback(fname=f'{conf["loss"]["type"]}-best-validation-loss', with_opt=True))
         optim = conf["training"]["optimizer"].lower()
         if optim == "ranger":
             opt_func = ranger
@@ -243,7 +243,7 @@ class ASRLearner(Learner):
 
         # Gradient Accumulation
         #  & Gradient Clipping
-        if acnb > 1 and not optim == "adahessian":
+        if not optim == "adahessian":
             if ddp:
                 gac = GradAccumCallbackDDP
             else:

@@ -1,0 +1,138 @@
+# set the used language
+#  "multi" for multilingual
+lang: multi
+
+# datasets
+datasets:
+  en:
+    train:
+      - yt-en
+    valid:
+      - yt-en
+  de:
+    train:
+      - yt-de
+    valid:
+      - yt-de
+  fr:
+    train:
+      - yt-fr
+    valid:
+      - yt-fr
+  es:
+    train:
+      - yt-es
+    valid:
+      - yt-es
+  it:
+    train:
+      - yt-it
+    valid:
+      - yt-it
+
+# percentage of each individual dataframe used
+#  (stage: builder)
+pcent:
+    train: 0.4
+    valid: 0.1
+    test: 1.0
+
+# audio length [seconds]
+almins: 0.5
+almaxs: 10.0 # 20.0
+
+# label length [characters]
+y_min: 1
+y_max: 2500
+y_max_words: 1000
+
+# which dataset to use
+suffix: "" # "cat-2468" # "cat-longy" # "cat-mix" # cat-4
+
+# dataloader settings
+dataloader_args:
+
+  # maximum batch size
+  bs_max: 192
+
+  # batch size multiplier
+  #  usually 8. or 4. or 2.
+  #  can be very high for contrastive (80.)
+  bs_mul: 80.
+
+
+###
+# model
+###
+
+model:
+  name: ContrastiveTransducer
+
+  # special prepro settings
+  preprocessor:
+    sr: 8000 # 16000
+    n_mels: 80
+    n_fft: 1024
+    downsample: 16
+    stack: 16
+    trainable: true
+
+    # specaugment parameters
+    time_mask_n: 4
+    time_mask_sz: 4
+    freq_mask_n: 4
+    freq_mask_sz: 4
+
+  # we probably need dropout in the encoder
+  encoder:
+    name: Encoder
+    num_layers: 6
+    norm: "ln"
+    dropout: 0.1
+    dropout_input: 0.0
+    dropout_inner: 0.0
+
+  # disable some modules
+  enable_predictor: true
+  enable_joint: false
+
+  # stft on gpu
+  learnable_stft: true
+
+  # self-supervised / contrastive
+  feature_sz: 1280
+  extra:
+    cache_sz: 8
+    modalities: 2
+    mode: contrastive # simsiam
+
+
+###
+# other
+###
+
+# batch management
+batching:
+
+  # batch size for validation dataset
+  #  2 modalities: 256 (!)
+  #  3 modalities: 192
+  batch_size_valid: 256 # 80 # 192 # 128 # 32
+
+  # gradient accumulation
+  #  (number of batches)
+  accumulate: 2 # 8 # 16
+
+# losses
+loss:
+  type: "contrastive" # "rnnt"
+
+# no tests
+tests_per_epoch: 0
+
+# cuda device
+cuda:
+  device: "cuda:0"
+
+# maybe enable wandb
+wandb: true
