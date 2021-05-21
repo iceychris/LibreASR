@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 import yaml
 
-from libreasr.lib.utils import n_params, what, wrap_transform
+from libreasr.lib.utils import n_params, what, wrap_transform, update
 from libreasr.lib.language import get_language
 from libreasr.lib.builder import ASRDatabunchBuilder
 from libreasr.lib.data import ASRDatabunch
@@ -15,16 +15,6 @@ from libreasr.lib.models import get_model
 from libreasr.lib.learner import ASRLearner
 from libreasr.lib.lm import load_lm
 from libreasr.lib.download import download_all
-
-
-def update(d, u):
-    "from: https://stackoverflow.com/questions/3232943/update-value-of-a-nested-dictionary-of-varying-depth"
-    for k, v in u.items():
-        if isinstance(v, collections.abc.Mapping):
-            d[k] = update(d.get(k, {}), v)
-        else:
-            d[k] = v
-    return d
 
 
 def open_config(*args, path="./config/testing.yaml", **kwargs):
@@ -104,12 +94,17 @@ def check_db(db):
     assert X_lens.size(0) == Y_lens.size(0)
 
 
-def apply_overrides(conf, config_paths):
-    for cp in config_paths:
-        p = conf
-        for one in cp:
-            p = p[one]
-        update(conf, p)
+def apply_overrides(conf, config_paths, silent=False):
+    try:
+        for cp in config_paths:
+            p = conf
+            for one in cp:
+                p = p[one]
+            update(conf, p)
+    except Exception as e:
+        if silent:
+            return conf
+        raise e
     return conf
 
 
@@ -120,6 +115,14 @@ def fix_config(conf):
             conf["transforms"]["x"] = conf["transforms"]["x-stft"]
         else:
             conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
+
+
+def fix_transforms(conf, inference=False):
+    if inference:
+        conf["transforms"]["x"] = conf["transforms"]["x"][1:]
+        if "stream" not in list(conf["transforms"].keys()):
+            print("[inference] warning: no streaming transforms defined...")
+            conf["transforms"]["stream"] = conf["transforms"]["x"]
 
 
 def parse_and_apply_config(
@@ -142,10 +145,13 @@ def parse_and_apply_config(
     lang_name = lang
     if lang is not None and len(lang) > 0:
         overrides.append(["overrides", "languages", lang])
-    conf = apply_overrides(conf, overrides)
+    conf = apply_overrides(conf, overrides, silent=True)
 
     # special config fixes...
     fix_config(conf)
+
+    # fix transforms for inference
+    fix_transforms(conf, inference=inference)
 
     # apply hook
     config_hook(conf)

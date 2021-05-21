@@ -7,18 +7,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchaudio
 
 from libreasr.lib.inference.imports import *
-from libreasr.lib.defaults import DEFAULT_STREAM_OPTS
-
-
-def should_reset(steps, downsample, n_buffer, thresh):
-    # one step length
-    steps = int(10.0 * downsample * n_buffer * steps)
-    if steps >= thresh:
-        # print("reset")
-        return True
-    return False
+from libreasr.lib.defaults import DEFAULT_STREAM_OPTS, DEFAULT_STREAM_CHUNK_SZ
 
 
 def transcribe_stream(
@@ -27,21 +19,19 @@ def transcribe_stream(
     """
     Transcribe an audio stream.
     :sth: is supposed to be a generator yielding
-    80ms chunks of raw audio data.
+    20ms chunks of raw audio data.
+    `buffer_n_frames` are then concatenated and transcribed.
     """
     stream_opts = update(DEFAULT_STREAM_OPTS, stream_opts)
 
     def stream_fn():
         started = False
         frames = []
-        counter = 0
         printed = False
         for i, frame in enumerate(sth):
             # fill up frames
-            # TODO check for type
             t = tensorize(frame)
             frames.append(t)
-            counter += 1
 
             # may continue?
             if not len(frames) == stream_opts["buffer_n_frames"]:
@@ -56,32 +46,49 @@ def transcribe_stream(
             # convert to AudioTensor
             aud = AudioTensor(aud, sr)
 
-            # print
-            # if not printed:
-            #     print(
-            #         f"TranscribeStream(sr={sr}, shape={aud.shape})"
-            #     )
-            #     printed = True
-
+            # apply transforms
             aud = x_tfm_stream(aud)
+
             yield aud
 
     # inference
     outputs = model.transcribe_stream(stream_fn(), lang.denumericalize, **kwargs)
     last = ""
-    steps = 0
-    for i, (y, y_one, reset_fn) in enumerate(outputs):
-        steps += 1
-        if y_one != "":
-            now = lang.denumericalize(y)
-            diff = "".join(y for x, y in itertools.zip_longest(last, now) if x != y)
-            last = now
-            yield (diff, now)
-        elif should_reset(
-            steps,
-            stream_opts["downsample"],
-            stream_opts["n_buffer"],
-            stream_opts["reset_thresh"],
-        ):
-            reset_fn()
-            steps = 0
+    for i, (y, reset_fn) in enumerate(outputs):
+        y = lang.denumericalize(y)
+        if y != last:
+            last = y
+            yield y
+
+
+def path_to_audio_generator(
+    path: str, secs=DEFAULT_STREAM_CHUNK_SZ, to_sr=16000, start_frames=1, end_frames=2
+):
+    """
+    Load audio from a path `path` via torchaudio,
+    resample it to `to_sr` and return chunks
+    of size `secs`.
+    """
+    data, sr = torchaudio.load(path)
+    data = data[0][None]
+    data = torchaudio.transforms.Resample(sr, to_sr)(data)
+    data = data.numpy().astype(np.float32).tobytes()
+    sr = to_sr
+    slice_sz = int(secs * sr) * 4
+    l = len(data) // slice_sz
+
+    # [start] zero
+    for _ in range(start_frames):
+        yield bytes([0] * slice_sz)
+
+    # [mid] transmit audio
+    for i in range(l):
+        chunk = data[i * slice_sz : (i + 1) * slice_sz]
+        # pad with zeros
+        chunk = chunk + bytes([0] * (slice_sz - len(chunk)))
+        assert len(chunk) % 4 == 0
+        yield chunk
+
+    # [end] zero frames mark end
+    for _ in range(end_frames):
+        yield bytes([0] * slice_sz)

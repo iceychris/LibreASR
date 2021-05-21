@@ -3,7 +3,11 @@ import operator
 import time
 import random
 from queue import PriorityQueue
-from functools import partial
+from functools import partial, lru_cache
+import itertools
+import math
+from dataclasses import dataclass, field
+from typing import List
 
 import torch
 from torch import nn, einsum
@@ -21,7 +25,18 @@ from IPython.core.debugger import set_trace
 from libreasr.lib.utils import *
 from libreasr.lib.layers import StackedRNN, DualModeMultiHeadSelfAttention
 from libreasr.lib.lm import LMFuser, LMFuserBatch
-from libreasr.lib.defaults import LM_ALPHA, LM_TEMP, MODEL_TEMP
+from libreasr.lib.defaults import (
+    LM_ALPHA,
+    LM_TEMP,
+    MODEL_TEMP,
+    DEFAULT_BEAM_SEARCH_OPTS,
+)
+from libreasr.lib.inference.beamsearch import (
+    BeamStateBuilder,
+    Beamer,
+    print_beam_results,
+    start_rnnt_beam_search,
+)
 
 
 class ResidualAdapter(Module):
@@ -148,18 +163,24 @@ class Preprocessor(Module):
         )
         self.specaugment = SpecAugment(**kwargs)
         self.sr = sr
+        self.n_mels = n_mels
         self.downsample = downsample
         self.stack = stack
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
-    def forward(self, x, xl=None):
+    def stack_downsample(self, x):
+        x = x.unfold(-2, self.stack, self.downsample).contiguous()
+        x = x.view(x.size(0), x.size(1), -1).contiguous()
+        return x
+
+    def forward(self, x, xl=None, inference=False):
         x = self.spec(x[..., :, 0, 0])
         x = self.specaugment(x)
         x = x.permute(0, 2, 1).contiguous()
-        x = x.unfold(-2, self.stack, self.downsample).contiguous()
-        x = x.view(x.size(0), x.size(1), -1).contiguous()
+        if not inference:
+            x = self.stack_downsample(x)
         if xl is not None:
             fac = self.sr // 100
             xl = torch.clamp(xl // (fac * self.downsample), min=1, max=x.size(1))
@@ -674,20 +695,6 @@ class Transducer(Module):
         # lm
         fuser = LMFuserBatch(self.lm)
 
-        # check if sth is None
-        def ok(a):
-            if isinstance(a, list):
-                return all([ok(x) for x in a])
-            return a is not None
-
-        # check if two things are the same
-        def eq(a, b):
-            if a is None or b is None:
-                return False
-            if isinstance(a, (list, tuple)):
-                return all([eq(x, y) for x, y in zip(a, b)])
-            return (a == b).all().item()
-
         # memoize joint
         mp, me = None, None
         rj = None
@@ -796,18 +803,14 @@ class Transducer(Module):
             strs.append(s)
         return strs
 
-    def decode(self, *args, **kwargs):
-        res, log_p, _ = self.decode_greedy(*args, **kwargs)
-        return res, log_p
-
     def transcribe(self, *args, **kwargs):
-        res, _, metrics, _ = self.decode_greedy(*args, **kwargs)
+        res, metrics, _ = self.decode_beam(*args, **kwargs)
         return res, metrics
 
-    def decode_greedy(
+    def decode_beam(
         self,
         x,
-        max_iters=3,
+        max_iters=2,
         alpha=LM_ALPHA,
         temp_lm=LM_TEMP,
         temp_model=MODEL_TEMP,
@@ -815,6 +818,7 @@ class Transducer(Module):
         enc_rb_trim=0,
         pre_rb_sz=0,
         pre_rb_trim=0,
+        beam_search_opts={},
     ):
         "x must be of shape [C, T, H]"
 
@@ -849,49 +853,33 @@ class Transducer(Module):
         # lm
         fuser = LMFuser(self.lm)
 
+        # initiate beam search
+        beam_search_opts = defaults(beam_search_opts, DEFAULT_BEAM_SEARCH_OPTS)
+        blank, bos, lang = self.blank, self.bos, self.lang
+        p, j = self.predictor, partial(
+            self.joint, temp=temp_model, softmax=True, log=False
+        )
+        po, ps = h_t_pred, pred_state
+        mi = max_iters
+        beamer = start_rnnt_beam_search(
+            beam_search_opts, blank, bos, lang, p, j, po, ps, mi
+        )
+
         # iterate through all timesteps
-        y_seq, log_p = [], 0.0
         for t, h_t_enc in enumerate(encoder_out):
 
-            iters = 0
-            while iters < max_iters:
-                iters += 1
-
-                # h_t_enc is of shape [H]
-                # go through the joint network
-                _h_t_pred = h_t_pred[None]
-                _h_t_enc = h_t_enc[None, None, None]
-                joint_out = self.joint(
-                    _h_t_pred, _h_t_enc, temp=temp_model, softmax=True, log=False
-                )
-
-                # decode one character
-                # extra["outs"].append(joint_out.clone())
-                prob, pred = joint_out.max(-1)
-                pred = int(pred)
-                log_p += float(prob)
-
-                # if blank,     advance encoder state
-                # if not blank, add to the decoded sequence so far
-                #               and advance predictor state
-                if pred == self.blank:
-                    break
-                else:
-                    # fuse with lm
-                    _, prob, pred = fuser.fuse(joint_out, prob, pred, alpha=alpha)
-
-                    # print(iters)
-                    y_seq.append(pred)
-                    y_one_char[0][0] = pred
-
-                    # advance predictor
-                    h_t_pred, pred_state = self.predictor(y_one_char, state=pred_state)
-
-                    # advance lm
-                    fuser.advance(y_one_char, temp=temp_lm)
+            # advance
+            beamer(h_t_enc)
 
             # record how many iters we had
-            extra["iters"].append(iters)
+            extra["iters"].append(-1)
+
+        # finalize beam search
+        # print_beam_results(beamer.all, denumericalize_fn=self.lang.denumericalize)
+
+        # extract best hypothesis
+        #  cut off BOS
+        y_seq = beamer.best.tokens[1:]
 
         # compute alignment score
         #  better if distributed along the sequence
@@ -903,13 +891,13 @@ class Transducer(Module):
         alignment_score = (_sum - _ones) / (_sum + 1e-4)
         metrics["alignment_score"] = alignment_score
 
-        return self.lang.denumericalize(y_seq), -log_p, metrics, extra
+        return self.lang.denumericalize(y_seq), metrics, extra
 
     def transcribe_stream(
         self,
         stream,
         denumericalizer,
-        max_iters=10,
+        max_iters=2,
         alpha=LM_ALPHA,
         temp_lm=LM_TEMP,
         temp_model=MODEL_TEMP,
@@ -917,6 +905,7 @@ class Transducer(Module):
         enc_rb_trim=0,
         pre_rb_sz=0,
         pre_rb_trim=0,
+        beam_search_opts={},
     ):
         """
         stream is expected to yield chunks of shape (NCHANS, CHUNKSIZE)
@@ -992,6 +981,48 @@ class Transducer(Module):
         # reset()
         reset_predictor()
 
+        last_x = None
+        assert isinstance(self.preprocessor, Preprocessor)
+        bs, n_mels, stack = 1, self.preprocessor.n_mels, self.preprocessor.stack
+        last_remainder = torch.zeros(bs, 0, n_mels, device=dev)
+        split = 0
+
+        def fix_tiling(x):
+            """
+            Funky way to make sure:
+            * spectrograms are properly tiled
+              and correct at the boundary (kinda working)
+            * time dimension is divisible by `stack`
+              for `stack_downsample`
+            """
+            nonlocal last_x, last_remainder
+            if last_x is None:
+                # save
+                last_x = x
+                return None, True
+
+            # 1. merge
+            l = [last_remainder, last_x[:, :-1], x[:, :-1]]
+            merged = torch.cat(l, dim=1)
+
+            # 2. cut
+            T = merged.size(1)
+            nm = nearest_multiple(T, stack)
+            out = merged[:, :nm]
+            last_remainder = merged[:, nm:]
+            last_x = None
+            return out, False
+
+        # initiate beam search
+        beam_search_opts = defaults(beam_search_opts, DEFAULT_BEAM_SEARCH_OPTS)
+        blank, bos, lang = self.blank, self.bos, self.lang
+        p, j = pre, partial(self.joint, temp=temp_model, softmax=True, log=False)
+        po, ps = h_t_pred, predictor_state
+        mi = max_iters
+        beamer = start_rnnt_beam_search(
+            beam_search_opts, blank, bos, lang, p, j, po, ps, mi
+        )
+
         # iterate through time
         # T > 1 is possible
         blanks = 0
@@ -1002,8 +1033,20 @@ class Transducer(Module):
             if chunk is None:
                 continue
 
-            # -> [1, T, H, W]
-            chunk = chunk.to(dev)[None, ..., 0]
+            # to correct device
+            chunk = chunk.to(dev)
+
+            # preprocessor
+            chunk = self.preprocessor(chunk, inference=True)
+
+            # adjust for correct stft window
+            #  and stack_downsample size
+            chunk, skip = fix_tiling(chunk)
+            if skip:
+                continue
+
+            # stack
+            chunk = self.preprocessor.stack_downsample(chunk)
 
             # forward pass encoder
             encoder_out, encoder_state = enc(chunk, encoder_state, return_state=True)
@@ -1014,50 +1057,12 @@ class Transducer(Module):
             for i in range(h_t_enc.size(-2)):
                 h_enc = h_t_enc[..., i, :]
 
-                iters = 0
-                while iters < max_iters:
-                    iters += 1
-
-                    # h_enc is of shape [H]
-                    # go through the joint network
-                    _h_t_pred = h_t_pred[None]
-                    _h_t_enc = h_enc[None, None, None]
-                    # print(_h_t_pred.shape)
-                    # print(_h_t_enc.shape)
-                    joint_out = self.joint(
-                        _h_t_pred, _h_t_enc, temp=temp_model, softmax=True, log=False
-                    )
-
-                    # decode one character
-                    prob, pred = joint_out.max(-1)
-                    pred = int(pred)
-
-                    # if blank,     advance encoder state
-                    # if not blank, add to the decoded sequence so far
-                    #               and advance predictor state
-                    if pred == self.blank:
-                        blanks += 1
-                        break
-                    else:
-                        # fuse with lm
-                        joint_out, prob, pred = fuser.fuse(
-                            joint_out, prob, pred, alpha=alpha
-                        )
-
-                        y_seq.append(pred)
-                        y_one_char[0][0] = pred
-
-                        # advance predictor
-                        h_t_pred, predictor_state = pre(y_one_char, predictor_state)
-
-                        # advance lm
-                        fuser.advance(y_one_char, temp=temp_lm)
-
-                        nonblanks += 1
-
-            # add to y
-            y = y + y_seq
-            yield y, denumericalizer(y_seq), reset
+                # perform beam search step
+                best = beamer(h_enc)
+                tok = best.tokens[1:]
+                tok = list(filter(lambda x: x != self.blank, tok))
+                if len(tok) > 0:
+                    yield tok, reset
 
 
 class Dummy(Module):
@@ -1167,7 +1172,7 @@ class MLP(nn.Module):
             nn.Linear(dim, hidden_size),
             nn.BatchNorm1d(hidden_size),
             nn.ReLU(inplace=True),
-            nn.Linear(hidden_size, projection_size)
+            nn.Linear(hidden_size, projection_size),
         )
 
     def forward(self, x):
@@ -1300,12 +1305,10 @@ class ContrastiveTransducer(Transducer):
 
         # create masks
         r1mask = (
-            torch.arange(T, dtype=xl1.dtype, device=xl1.device)[None, :]
-            < xl1[:, None]
+            torch.arange(T, dtype=xl1.dtype, device=xl1.device)[None, :] < xl1[:, None]
         )
         r2mask = (
-            torch.arange(T, dtype=xl2.dtype, device=xl2.device)[None, :]
-            < xl2[:, None]
+            torch.arange(T, dtype=xl2.dtype, device=xl2.device)[None, :] < xl2[:, None]
         )
 
         if sequence_wise:
@@ -1318,10 +1321,10 @@ class ContrastiveTransducer(Transducer):
             r2t = self.prediction(r2)
 
             # make sure irrelevant values are zero in loss
-            r1[~r1mask] = 0.
-            r2[~r2mask] = 0.
-            r1t[~r1mask] = 0.
-            r2t[~r2mask] = 0.
+            r1[~r1mask] = 0.0
+            r2[~r2mask] = 0.0
+            r1t[~r1mask] = 0.0
+            r2t[~r2mask] = 0.0
 
             # pass lengths to loss
             xl_loss = xl1
@@ -1349,13 +1352,16 @@ class ContrastiveTransducer(Transducer):
         # loss
         if return_logits:
             return r1, r2
-        loss = self.simsiam_loss(r1, r2t, xl=xl_loss) / 2. + self.simsiam_loss(r2, r1t, xl=xl_loss) / 2.
+        loss = (
+            self.simsiam_loss(r1, r2t, xl=xl_loss) / 2.0
+            + self.simsiam_loss(r2, r1t, xl=xl_loss) / 2.0
+        )
         return loss
 
     def forward_contrastive(self, tpl, return_logits=False):
         """
         A contrastive objective following CLIP.
-        https://arxiv.org/abs/2103.00020 
+        https://arxiv.org/abs/2103.00020
         """
 
         # unpack
@@ -1391,12 +1397,10 @@ class ContrastiveTransducer(Transducer):
 
         # create masks
         r1mask = (
-            torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :]
-            < xl[:, None]
+            torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
         )
         r2mask = (
-            torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :]
-            < yl[:, None]
+            torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
         )
 
         # reduce

@@ -25,17 +25,6 @@ def log_print(*args, **kwargs):
     print("[api-server]", *args, **kwargs)
 
 
-def get_settings(conf):
-    downsample = None
-    n_buffer = None
-    for tfm in conf["transforms"]["stream"]:
-        if tfm["name"] == "StackDownsample":
-            downsample = tfm["args"]["downsample"]
-        if tfm["name"] == "Buffer":
-            n_buffer = tfm["args"]["n_buffer"]
-    return downsample, n_buffer
-
-
 class LibreASRServicer(apg.LibreASRServicer):
     def __init__(self, libreasr, lang):
         self.lang_name = lang
@@ -50,14 +39,11 @@ class LibreASRServicer(apg.LibreASRServicer):
         # print
         log_print(f"Transcribe(lang={self.lang_name}, sr={sr}, shape={aud.shape})")
 
-        # tfms
-        aud = AudioTensor(aud, sr)
-        aud = self.x_tfm(aud)[0]
-
         # inference
-        out = self.model.transcribe(aud)
+        aud = AudioTensor(aud, sr)
+        transcript = self.l.transcribe(aud)
 
-        return ap.Transcript(data=out[0])
+        return ap.Transcript(data=transcript)
 
     def TranscribeStream(self, request_iterator, context):
         # peek at the first frame
@@ -66,9 +52,15 @@ class LibreASRServicer(apg.LibreASRServicer):
         sr = frame.sr
         unpeeked = itertools.chain([frame], request_iterator)
 
+        # print
+        log_print(
+            f"TranscribeStream(lang={self.lang_name}, sr={sr}, shape=({len(frame.data)}))"
+        )
+
         # inference
-        for diff, now in self.l.stream(iter(unpeeked), sr=sr):
-            yield ap.Transcript(data=diff)
+        for transcript in self.l.stream(iter(unpeeked), sr=sr):
+            yield ap.Transcript(data=transcript)
+        log_print(f"... done.")
 
 
 def serve(lang, config_path=None):
@@ -76,7 +68,14 @@ def serve(lang, config_path=None):
     # load model
     from libreasr import LibreASR
 
-    libreasr = LibreASR(lang, config_path=config_path)
+    def hook(conf):
+        conf["model"]["loss"] = False
+        conf["cuda"]["enable"] = False
+        conf["cuda"]["device"] = "cpu"
+        conf["model"]["load"] = True
+        conf["model"]["path"] = {"n": "~/.cache/LibreASR/de-1.1.0/model.pth"}
+
+    libreasr = LibreASR(lang, config_path=config_path, config_hook=hook)
     libreasr.load_inference()
 
     # bring up server

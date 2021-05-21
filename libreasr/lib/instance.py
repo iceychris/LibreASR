@@ -32,16 +32,29 @@ class LibreASRInstance:
             return transcripts[0]
         return transcripts
 
-    def stream(self, sth, **kwargs):
+    def stream(self, sth, batch=False, **kwargs):
+        assert not batch, "Batched streaming is not supported"
+
         # update with tuned values if available
         kwargs.update(self.conf.get("hypers", {}).get("tuned", {}))
 
         # go!
         if inspect.isgeneratorfunction(sth):
             sth = sth()
-        if isinstance(
-            sth,
-            (types.GeneratorType, list, tuple, map, filter, collections.abc.Iterator),
+        if (
+            isinstance(
+                sth,
+                (
+                    types.GeneratorType,
+                    list,
+                    tuple,
+                    map,
+                    filter,
+                    collections.abc.Iterator,
+                ),
+            )
+            or isinstance(sth, str)
+            or isinstance(sth, list)
         ):
             return self._transcribe_stream_generator(sth, **kwargs)
         elif isinstance(sth, queue.Queue):
@@ -74,11 +87,30 @@ class LibreASRInstance:
         return _infer(self.model, batches, lens, batched=True, **kwargs)
 
     def _transcribe_stream_generator(self, sth, **kwargs):
-        from libreasr.lib.stream import transcribe_stream
+        from libreasr.lib.stream import transcribe_stream, path_to_audio_generator
 
-        return transcribe_stream(
-            sth, self.model, self.x_tfm_stream, self.lang, **kwargs
-        )
+        def stream(sth):
+            return transcribe_stream(
+                sth, self.model, self.x_tfm_stream, self.lang, **kwargs
+            )
+
+        def get_result(stream_output):
+            # grab last output
+            return list(stream_output)[-1]
+
+        transcripts = None
+        if isinstance(sth, str):
+            # turn into generator
+            sth = path_to_audio_generator(sth)
+            transcripts = get_result(stream(sth))
+        elif isinstance(sth, list) and len(sth) > 0 and isinstance(sth[0], str):
+            transcripts = []
+            for s in sth:
+                s = path_to_audio_generator(s)
+                transcripts.append(get_result(stream(s)))
+        else:
+            raise Exception(f"Streaming chunks of type {type(sth)} is not implemented")
+        return transcripts
 
     def _transcribe_stream_queue(self, sth, **kwargs):
         pass

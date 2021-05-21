@@ -2,20 +2,56 @@ DEFAULT_CONFIG_PATH = "./config/testing.yaml"
 DEFAULT_SR = 16000
 DEFAULT_BATCH_SIZE = 6
 
+# language model params
 LM_ALPHA = 0.1
 LM_THETA = 1.0
 LM_TEMP = 1.0
 LM_DEBUG = False
 
+# model params
 MODEL_TEMP = 1.0
 
-# streaming
-DEFAULT_STREAM_OPTS = {
-    "reset_thresh": 7000,
-    "buffer_n_frames": 3,
-    "downsample": 8,
-    "n_buffer": 2,
+# beam search
+DEFAULT_BEAM_SEARCH_OPTS = {
+    "beam_width": 32,
+    "topk_next": 2,
+    "predictor_cache_sz": 1024,
+    "joint_cache_sz": 1024,
+    "score_cache_sz": 1024 * 32,
+    "debug": False,
 }
+
+# streaming
+DEFAULT_STREAM_CHUNK_SZ = 0.16  # secs
+DEFAULT_STREAM_OPTS = {
+    "buffer_n_frames": 1,
+    "sr": 16000,
+    "chunk_sz": DEFAULT_STREAM_CHUNK_SZ,
+}
+
+# example audio
+WAVS = [
+    "./assets/samples/common_voice_de_17672459.wav",
+    "./assets/samples/common_voice_de_18227443.wav",
+    "./assets/samples/common_voice_de_18520948.wav",
+    "./assets/samples/common_voice_de_17516889.wav",
+    "./assets/samples/common_voice_de_18818000.wav",
+    # 798460, 52470
+    "./assets/samples/yt_de_TzSV5FJyEeg.wav",
+]
+
+# example labels
+LABELS = [
+    "als die stadtmauern errichtet wurden hieß es dass sie unbezwingbar seien",
+    "insbesondere keine topflappen",
+    "durch einen elektrisierten weidezaun ist die koppel begrenzt",
+    "die beamten gehen nun verstärkt gegen illegale straßenrennen vor",
+    "frau senninger aus dem zweiten stock hat bei einem sturz einen oberschenkelhalsbruch erlitten",
+    """angebracht ist also wenn ich die spd richtig verstanden habe vergangene woche ist von ihrer spitze von canalis her kategorisch erklärt mehr auf die fresse nahles keine katze erklärt keine bundeswehrbeteiligung mit man alles also sind wir demnächst formales los und bomben in syrien ich verstehe aber nicht gut aber es wurde also in der vergangenen woche als die gerüchteküche kirche so bearbeitete war auch sogar die version solle man präventiv eine schnecke machen auch wennn also chemie einem waffeneinsatz sagen es hat android soll man dann schon das wurde inzwischen relativ klar ausgefallen gesagt nee allerdings wenn denn dann tatsächlich nachweisbar eingesetzt ist lassen da empfehle ich noch mal den film minority""",
+]
+
+# zipped audio & labels
+AUDIOS = list(zip(WAVS, LABELS))
 
 # alias languages
 #  to releases with

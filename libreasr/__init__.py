@@ -111,7 +111,7 @@ class LibreASR:
 
     def get_grpc_port(self):
         assert self.mode is not None
-        return self.inst.conf.get("grpc_port")
+        return self.inst.conf.get("grpc_port", 50051)
 
     def available_models(self):
         return get_available_models()

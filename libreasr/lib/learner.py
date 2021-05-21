@@ -188,7 +188,11 @@ class ASRLearner(Learner):
                     espm_kwargs=espm_kwargs,
                 )
             )
-            cbs.append(SaveModelCallback(fname=f'{conf["loss"]["type"]}-best-validation-loss', with_opt=True))
+            cbs.append(
+                SaveModelCallback(
+                    fname=f'{conf["loss"]["type"]}-best-validation-loss', with_opt=True
+                )
+            )
         optim = conf["training"]["optimizer"].lower()
         if optim == "ranger":
             opt_func = ranger

@@ -571,25 +571,6 @@ class FixDimensions(Transform):
         return t.data.unsqueeze(-1)
 
 
-class Buffer(Transform):
-    "Buffer incoming tensors and concat them when n_buffer is reached"
-    order = 150
-
-    def __init__(self, n_buffer, **kwargs):
-        self.n_buffer = n_buffer
-        self.saved = []
-
-    def encodes(self, t: Tensor) -> None:
-        debug(self)
-        self.saved.append(t)
-        if len(self.saved) == self.n_buffer:
-            catted = torch.cat(self.saved, dim=1)
-            self.saved.clear()
-            # print("Buffer catted:", catted.shape)
-            return catted[0]
-        return None
-
-
 class MyOpenLabel(Transform):
     order = 0
 

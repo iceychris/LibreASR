@@ -31,13 +31,18 @@ def log_print(*args, **kwargs):
 
 
 def choose_channel(conf, lang):
-    p = conf["overrides"]["languages"][lang]["grpc_port"]
+    p = conf.get("overrides", {}).get("languages", [])
+    if lang in p:
+        p = p[lang].get("grpc_port", 50051)
+    else:
+        p = 50051
     return f"localhost:{p}"
 
 
 def grpc_thread_func(conf, lang, q_recv, q_send):
     # choose channel & connect
     chan = choose_channel(conf, lang)
+    log_print(f"gRPC connecting to {chan}")
     with grpc.insecure_channel(chan) as channel:
         log_print("gRPC connected")
         stub = apg.LibreASRStub(channel)

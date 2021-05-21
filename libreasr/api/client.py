@@ -9,14 +9,13 @@ import numpy as np
 
 import libreasr.api.interfaces.libreasr_pb2 as ap
 import libreasr.api.interfaces.libreasr_pb2_grpc as apg
+from libreasr.lib.defaults import AUDIOS, DEFAULT_STREAM_CHUNK_SZ
 
-DEMO_AUDIO = "./demo/3729-6852-0035.flac"
-CHUNK_DURATION = 0.08  # secs
-PORT = 50052
+PORT = 50051
 
 
-def load_demo():
-    data, sr = torchaudio.load(DEMO_AUDIO)
+def load_demo(f):
+    data, sr = torchaudio.load(f)
     data = data[0][None]
     data = torchaudio.transforms.Resample(sr, 16000)(data)
     sr = 16000
@@ -24,13 +23,13 @@ def load_demo():
     return data, sr
 
 
-def grab_audio():
-    data, sr = load_demo()
+def grab_audio(f):
+    data, sr = load_demo(f)
     return ap.Audio(data=data, sr=sr)
 
 
-def grab_audio_stream(secs):
-    data, sr = load_demo()
+def grab_audio_stream(f, secs):
+    data, sr = load_demo(f)
     slice_sz = int(secs * sr) * 4
     l = len(data) // slice_sz
     # [start] zero
@@ -48,15 +47,18 @@ def grab_audio_stream(secs):
 
 
 def test_asr(stub):
-    print("Transcribe:")
-    audio = grab_audio()
-    print("-", stub.Transcribe(audio).data)
+    for f, l in AUDIOS:
+        print("Transcribe:")
+        audio = grab_audio(f)
+        print("-", stub.Transcribe(audio).data)
 
-    print("TranscribeStream:\n- ", end="")
-    audio_stream = grab_audio_stream(secs=CHUNK_DURATION)
-    for transcript in stub.TranscribeStream(audio_stream):
-        print(transcript.data, end="")
-    print()
+    for f, l in AUDIOS:
+        print("TranscribeStream:\n- ", end="")
+        audio_stream = grab_audio_stream(f, secs=DEFAULT_STREAM_CHUNK_SZ)
+        for transcript in stub.TranscribeStream(audio_stream):
+            print("-", transcript.data, end="\r")
+            sys.stdout.flush()
+        print()
 
 
 def run(args):
@@ -88,7 +90,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--file",
         type=str,
-        default=DEMO_AUDIO,
+        default="",
         help="if mode==file: what file to transcribe",
     )
     args = parser.parse_args()

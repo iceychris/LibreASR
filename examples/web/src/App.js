@@ -118,7 +118,7 @@ class App extends React.Component {
             bufferLength: e.inputBuffer.length,
         })
         transcribe(data, lang, sr, (transcript) => {
-            document.getElementById("transcript").innerText += transcript
+            document.getElementById("transcript").innerText = transcript
         });
     }).bind(this);
 

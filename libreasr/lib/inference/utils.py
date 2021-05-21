@@ -15,12 +15,15 @@ def update(d, u):
 
 
 def apply_overrides(conf, config_paths):
-    for cp in config_paths:
-        p = conf
-        for one in cp:
-            p = p[one]
-        update(conf, p)
-    return conf
+    try:
+        for cp in config_paths:
+            p = conf
+            for one in cp:
+                p = p[one]
+            update(conf, p)
+        return conf
+    except:
+        pass
 
 
 def load_config(path, lang=None, do_overrides=True):

@@ -1,5 +1,6 @@
 import traceback
 from collections import OrderedDict
+from collections.abc import Mapping
 import re
 
 import matplotlib.pyplot as plt
@@ -11,9 +12,29 @@ LANGS = "de,en,fr,sv,es,eo,it,nl".split(",")
 LANG_TO_IDX = {l: i for i, l in enumerate(LANGS)}
 
 
+def update(d, u):
+    "from: https://stackoverflow.com/questions/3232943/update-value-of-a-nested-dictionary-of-varying-depth"
+    for k, v in u.items():
+        if isinstance(v, Mapping):
+            d[k] = update(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d
+
+
+def defaults(d, default_val):
+    return update(default_val.copy(), d)
+
+
 class Text(str):
     def show(self, **kwargs):
         print(self)
+
+
+def nearest_multiple(x, base, identity_if_divisible=True):
+    if identity_if_divisible and x % base == 0:
+        return x
+    return base * round(x / base) - base
 
 
 def stats(t):
@@ -167,6 +188,8 @@ def tensorize(x):
     arr = x
     if hasattr(x, "data") and isinstance(x.data, (bytes, bytearray)):
         arr = np.frombuffer(x.data, dtype=np.float32)
+    elif isinstance(x, (bytes, bytearray)):
+        arr = np.frombuffer(x, dtype=np.float32)
 
     # np array
     # copy to avoid warning
@@ -233,6 +256,26 @@ def sanitize_str(o):
     # add space at beginning (for BPE)
     o = " " + o
     return o
+
+
+def ok(a):
+    """
+    check if sth is None
+    """
+    if isinstance(a, list):
+        return all([ok(x) for x in a])
+    return a is not None
+
+
+def eq(a, b):
+    """
+    check if two things (i.e. tensors) are the same
+    """
+    if a is None or b is None:
+        return False
+    if isinstance(a, (list, tuple)):
+        return all([eq(x, y) for x, y in zip(a, b)])
+    return (a == b).all().item()
 
 
 class TensorRingBuffer:

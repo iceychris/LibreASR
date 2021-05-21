@@ -13,6 +13,13 @@ WAVS = [
     "./assets/samples/common_voice_de_17516889.wav",
     "./assets/samples/common_voice_de_18818000.wav",
 ]
+LABELS = [
+    "als die stadtmauern errichtet wurden hieß es dass sie unbezwingbar seien",
+    "insbesondere keine topflappen",
+    "durch einen elektrisierten weidezaun ist die koppel begrenzt",
+    "die beamten gehen nun verstärkt gegen illegale straßenrennen vor",
+    "frau senninger aus dem zweiten stock hat bei einem sturz einen oberschenkelhalsbruch erlitten",
+]
 
 
 class TestTranscribe(unittest.TestCase):
