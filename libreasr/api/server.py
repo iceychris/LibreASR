@@ -73,7 +73,7 @@ def serve(lang, config_path=None):
         conf["cuda"]["enable"] = False
         conf["cuda"]["device"] = "cpu"
         conf["model"]["load"] = True
-        conf["model"]["path"] = {"n": "~/.cache/LibreASR/de-1.1.0/model.pth"}
+        conf["model"]["path"] = {"n": "./models/de-4096.pth"}
 
     libreasr = LibreASR(lang, config_path=config_path, config_hook=hook)
     libreasr.load_inference()

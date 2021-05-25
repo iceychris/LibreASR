@@ -109,11 +109,23 @@ class LibreASRInstance:
                 s = path_to_audio_generator(s)
                 transcripts.append(get_result(stream(s)))
         else:
-            raise Exception(f"Streaming chunks of type {type(sth)} is not implemented")
+            transcripts = stream(sth)
         return transcripts
 
     def _transcribe_stream_queue(self, sth, **kwargs):
-        pass
+        from libreasr.lib.stream import transcribe_stream
+
+        def yielder():
+            while True:
+                try:
+                    item = sth.get_nowait()
+                    yield item
+                except:
+                    pass
+
+        return transcribe_stream(
+            yielder(), self.model, self.x_tfm_stream, self.lang, **kwargs
+        )
 
 
 class LibreASRTraining(LibreASRInstance):

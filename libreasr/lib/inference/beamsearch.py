@@ -16,7 +16,8 @@ from libreasr.lib.memo import mk_memo
 # beam search length normalization
 #  alpha parameter.
 #  See https://www.youtube.com/watch?v=ZGUZwk7xIwk
-BEAM_SEARCH_ALPHA = 0.0
+BEAM_SEARCH_SCORE_ALPHA = 1.0  # 0.0
+BEAM_SEARCH_INITIAL_MULTIPLIER = 1.0
 
 
 def BeamStateBuilder(predictor_fn, score_cache_sz):
@@ -26,6 +27,7 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
         pred: torch.Tensor = None
         tokens: List[int] = field(default_factory=list)
         probs: List[float] = field(default_factory=list)
+        multiplier: float = BEAM_SEARCH_INITIAL_MULTIPLIER
 
         def __eq__(self, other):
             return self.tokens == other.tokens
@@ -34,16 +36,20 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
             return self.score < other.score
 
         def __hash__(self):
-            return hash(tuple(self.tokens)) ^ hash(tuple(self.probs))
+            return (
+                hash(tuple(self.tokens))
+                ^ hash(tuple(self.probs))
+                ^ hash(self.multiplier)
+            )
 
         @property
         @lru_cache(maxsize=score_cache_sz)
         def score(self):
             # probs are expected to be elem [0.0, 1.0[
             tokens, probs = self.tokens, self.probs
-            alpha = BEAM_SEARCH_ALPHA
-            factor = 1 / len(probs) ** alpha
-            probs = np.array(probs)
+            alpha = BEAM_SEARCH_SCORE_ALPHA
+            probs = np.array([*probs, self.multiplier])
+            factor = 1 / len(tokens) ** alpha
             score = factor * np.sum(np.log(probs))
             return score
 
@@ -55,6 +61,7 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
                 self.pred,
                 toks,
                 probs,
+                self.multiplier,
             )
 
         def commit(self):
@@ -63,6 +70,7 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
                 predictor_fn(self.tokens),
                 self.tokens,
                 self.probs,
+                self.multiplier,
             )
 
         def with_enc(self, enc):
@@ -71,6 +79,7 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
                 self.pred,
                 self.tokens,
                 self.probs,
+                self.multiplier,
             )
 
         def with_probs(self, probs):
@@ -79,6 +88,16 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
                 self.pred,
                 self.tokens,
                 probs,
+                self.multiplier,
+            )
+
+        def with_multiplier(self, multiplier: float):
+            return BeamState(
+                self.enc,
+                self.pred,
+                self.tokens,
+                self.probs,
+                multiplier,
             )
 
         def str(self, raw=False):
@@ -145,7 +164,8 @@ class Beamer(nn.Module):
         self.max_iters = max_iters
         self.debug = debug
         self.t = 0
-        print(f"[beamsearch] bw={beam_width}, topk={topk_next}, mi={max_iters}")
+        if debug:
+            print(f"[beamsearch] bw={beam_width}, topk={topk_next}, mi={max_iters}")
 
     def forward(self, enc):
         bw = self.beam_width
@@ -157,10 +177,28 @@ class Beamer(nn.Module):
         grouped = itertools.groupby(candidates, key=key_lambda)
         candidates = []
         for k, g in grouped:
-            # just add the best hypothesis
-            #  and discard all others
-            #  this gives good speed
-            candidates.append(max(g))
+            g = list(g)
+
+            # no merges needed
+            if len(g) == 1:
+                candidates.append(g[0])
+                continue
+
+            # option 1
+            #  just keep the best hypothesis :-)
+            # candidates.append(max(g))
+
+            # option 2
+            #  naively increase the multiplier
+            s = g[0]  # max(g)
+            keep = s.with_multiplier(s.multiplier * len(g))
+            candidates.append(keep)
+
+            # debug
+            # for s in g:
+            #     print(s.score, s.multiplier, s.tokens)
+            # print("kept", keep.score, keep.multiplier, keep.tokens)
+            # print()
 
         # expand
         l = 0
@@ -218,10 +256,10 @@ class Beamer(nn.Module):
         return max(self.beam)
 
 
-def print_beam_results(results, denumericalize_fn, blank=0):
+def print_beam_results(results, denumericalize_fn, top=4, blank=0):
     results = list(
         map(lambda s: (denumericalize_fn(s.tokens[1:]), s.tokens, s.score), results)
-    )
+    )[:top]
     for q, r in enumerate(results):
         print(f"#{q}:")
         for part in r:

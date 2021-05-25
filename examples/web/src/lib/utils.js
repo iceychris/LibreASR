@@ -1,4 +1,4 @@
-const AUDIO_DURATION = 0.16;
+const AUDIO_DURATION = 0.08;
 
 export function concatenate(resultConstructor, ...arrays) {
   let totalLength = 0;

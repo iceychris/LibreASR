@@ -40,8 +40,8 @@ def transcribe_stream(
             # cat all frames
             aud = torch.cat(frames, dim=1)
 
-            # clear first
-            del frames[0]
+            # erase all frames
+            frames.clear()
 
             # convert to AudioTensor
             aud = AudioTensor(aud, sr)
@@ -52,13 +52,14 @@ def transcribe_stream(
             yield aud
 
     # inference
-    outputs = model.transcribe_stream(stream_fn(), lang.denumericalize, **kwargs)
-    last = ""
-    for i, (y, reset_fn) in enumerate(outputs):
-        y = lang.denumericalize(y)
-        if y != last:
-            last = y
-            yield y
+    with torch.no_grad():
+        outputs = model.transcribe_stream(stream_fn(), lang.denumericalize, **kwargs)
+        last = ""
+        for i, (y, reset_fn) in enumerate(outputs):
+            y = lang.denumericalize(y)
+            if y != last:
+                last = y
+                yield y
 
 
 def path_to_audio_generator(

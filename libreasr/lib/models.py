@@ -29,6 +29,7 @@ from libreasr.lib.defaults import (
     LM_ALPHA,
     LM_TEMP,
     MODEL_TEMP,
+    DEFAULT_MAX_ITERS,
     DEFAULT_BEAM_SEARCH_OPTS,
 )
 from libreasr.lib.inference.beamsearch import (
@@ -648,7 +649,7 @@ class Transducer(Module):
     def transcribe_batch(
         self,
         tpl,
-        max_iters=3,
+        max_iters=DEFAULT_MAX_ITERS,
         alpha=LM_ALPHA,
         temp_lm=LM_TEMP,
         temp_model=MODEL_TEMP,
@@ -810,7 +811,7 @@ class Transducer(Module):
     def decode_beam(
         self,
         x,
-        max_iters=2,
+        max_iters=DEFAULT_MAX_ITERS,
         alpha=LM_ALPHA,
         temp_lm=LM_TEMP,
         temp_model=MODEL_TEMP,
@@ -875,7 +876,7 @@ class Transducer(Module):
             extra["iters"].append(-1)
 
         # finalize beam search
-        # print_beam_results(beamer.all, denumericalize_fn=self.lang.denumericalize)
+        # print_beam_results(beamer.all, denumericalize_fn=self.lang.denumericalize, top=4)
 
         # extract best hypothesis
         #  cut off BOS
@@ -897,7 +898,7 @@ class Transducer(Module):
         self,
         stream,
         denumericalizer,
-        max_iters=2,
+        max_iters=DEFAULT_MAX_ITERS,
         alpha=LM_ALPHA,
         temp_lm=LM_TEMP,
         temp_model=MODEL_TEMP,
