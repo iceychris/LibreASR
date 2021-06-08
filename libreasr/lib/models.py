@@ -32,6 +32,7 @@ from libreasr.lib.defaults import (
     DEFAULT_MAX_ITERS,
     DEFAULT_BEAM_SEARCH_OPTS,
 )
+from libreasr.lib.layers.encoders.slim import SlimEncoder
 from libreasr.lib.inference.beamsearch import (
     BeamStateBuilder,
     Beamer,
@@ -413,14 +414,21 @@ def get_model(conf, *args, **kwargs):
 
 
 class RNNTLoss(Module):
-    def __init__(self, reduction=1.0, zero_nan=False):
+    """
+    RNN-T loss function
+    with auxiliary CTC loss
+    """
+    def __init__(self, aux_ctc=False, reduction=1.0, zero_nan=False):
         from warp_rnnt import rnnt_loss
 
-        self.loss = partial(rnnt_loss, average_frames=False, fastemit_lambda=0.004)
+        self.rnnt_loss = partial(rnnt_loss, average_frames=False, fastemit_lambda=0.002)
         self.reduction = reduction
         self.zero_nan = zero_nan
+        self.aux_ctc = aux_ctc
+        if aux_ctc:
+            self.ctc_loss = nn.CTCLoss(zero_infinity=True)
 
-    def forward(self, x, y, xl, yl):
+    def forward(self, x, y, xl, yl, ctc_out=None):
         # trim lens
         xl = torch.clamp(xl // self.reduction, min=1, max=x.size(1))
 
@@ -433,7 +441,25 @@ class RNNTLoss(Module):
         if self.zero_nan:
             x = torch.where(torch.isnan(x), torch.zeros_like(x), x)
 
-        return self.loss(x, y, xl, yl)
+        # dict of losses
+        losses = dict()
+
+        # calc rnnt loss
+        rnnt_loss_value = self.rnnt_loss(x, y, xl, yl)
+        losses["rnnt_loss"] = rnnt_loss_value
+        losses["loss"] = rnnt_loss_value
+
+        # calc ctc loss
+        ctc_loss_value = 0.0
+        if self.aux_ctc and ctc_out is not None:
+            ctc_out = ctc_out.permute(1, 0, 2).contiguous().log_softmax(-1)
+            y = y.type(torch.long)
+            xl = xl.type(torch.long)
+            yl = yl.type(torch.long)
+            ctc_loss_value = self.ctc_loss(ctc_out, y, xl, yl)
+            losses["ctc_loss"] = ctc_loss_value
+            losses["loss"] = (rnnt_loss_value + ctc_loss_value) / 2.
+        return losses
 
 
 class Benchmark(object):
@@ -480,6 +506,7 @@ class Transducer(Module):
         device="cpu",
         loss=False,
         benchmark=False,
+        auxiliary_ctc_loss=False,
         **kwargs,
     ):
         self.preprocessor = (
@@ -517,7 +544,10 @@ class Transducer(Module):
         self.device = device
         self.lm = None
         self.learnable_stft = learnable_stft
-        self.loss = RNNTLoss() if loss else None
+        if auxiliary_ctc_loss:
+            self.ctc_head = nn.LSTM(out_sz, vocab_sz, num_layers=1, batch_first=True)
+        self.aux_ctc = auxiliary_ctc_loss
+        self.loss = RNNTLoss(aux_ctc=auxiliary_ctc_loss) if loss else None
         self.ctx = Benchmark if benchmark else contextlib.suppress
 
     @staticmethod
@@ -608,6 +638,7 @@ class Transducer(Module):
         with self.ctx("encoder"):
             x = x.reshape(x.size(0), x.size(1), -1)
             encoder_out = self.encoder(x, lengths=xl)
+            raw_encoder_out = encoder_out
 
         # N: batch size
         # T: n frames (time)
@@ -642,9 +673,15 @@ class Transducer(Module):
             if self.loss is None or return_logits:
                 return joint_out
 
+        # aux ctc head
+        ctc_out = None
+        if self.aux_ctc:
+            with self.ctx("aux_ctc"):
+                ctc_out, _ = self.ctc_head(raw_encoder_out)
+
         # calc loss
         with self.ctx("loss"):
-            loss = self.loss(joint_out, y, xl, yl)
+            loss = self.loss(joint_out, y, xl, yl, ctc_out=ctc_out)
         return loss
 
     def transcribe_batch(

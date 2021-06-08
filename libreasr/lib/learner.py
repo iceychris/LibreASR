@@ -27,8 +27,8 @@ from libreasr.lib.callbacks import (
     Rank0Wrapper,
     EvalSpeechModel,
 )
-from libreasr.lib.loss import get_loss_func
 from libreasr.lib.optimizer import AdaHessian, Apollo, ranger_adabelief
+from libreasr.lib.utils import warn
 
 
 HESSIAN_EVERY = 1  # 50
@@ -159,7 +159,38 @@ class HutchinsonTraceCallback(Callback):
         pass
 
 
-class ASRLearner(Learner):
+def reducer(report_loss_dict_fn, loss_dict, *args, reduction="mean", **kwargs):
+    """
+    Models are expected to output a
+    loss tensor of shape [N].
+    This function reduces this tensor
+    to a scalar.
+    Also perform a NaN check.
+    """
+    # check for NaN in all sublosses
+    #  and bail
+    for k, loss in loss_dict.items():
+        if torch.isnan(loss).any():
+            warn(f"Found NaN values in loss_dict key {k}")
+            warn("Returing mock loss value")
+            loss = torch.Tensor([0.0])
+            loss.requires_grad_(True)
+            loss_dict[k] = loss
+
+    # extract main loss
+    loss = loss_dict["loss"]
+
+    # report
+    report_loss_dict_fn(loss_dict)
+
+    # reduce
+    if reduction == "mean":
+        return loss.mean()
+    else:
+        return loss
+
+
+class LibreASRLearner(Learner):
     @staticmethod
     def from_config(conf, db, m):
         # pull info from config
@@ -178,7 +209,7 @@ class ASRLearner(Learner):
         cbs = [
             CudaCallback(),
             TerminateOnNaNCallback(),
-            ReduceLROnPlateau(patience=1, min_lr=1e-5, factor=1.5),
+            # ReduceLROnPlateau(patience=1, min_lr=1e-5, factor=1.5),
         ]
         if use_persistence_cbs:
             cbs.append(
@@ -256,6 +287,7 @@ class ASRLearner(Learner):
 
         # Tensorboard
         extra_cbs = []
+        report_loss_dict_fn = lambda x: None
         if use_tensorboard:
             if use_persistence_cbs:
                 _tb = partial(
@@ -265,19 +297,14 @@ class ASRLearner(Learner):
                     tests_per_epoch=conf["tests_per_epoch"],
                     ddp=ddp,
                 )()
+                report_loss_dict_fn = _tb.report_loss_dict
                 extra_cbs.append(_tb)
 
+        # construct learner
         learn = Learner(
             db,
             m,
-            loss_func=get_loss_func(
-                conf["loss"]["type"],
-                conf["cuda"]["device"],
-                noisystudent=conf["training"]["noisystudent"],
-                debug=False,
-                perf=False,
-                div_by_len=False,
-            ),
+            loss_func=partial(reducer, report_loss_dict_fn),
             opt_func=opt_func,
             splitter=partial(transducer_splitter, adahessian=(optim == "adahessian")),
             cbs=cbs,

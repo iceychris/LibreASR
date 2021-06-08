@@ -40,20 +40,6 @@ DUMMY_TEXT = Text(" dummy ")
 DEBUG_TRANSFORMS = False
 
 
-def warn(msg):
-    m = f"WARN | {msg}"
-    mn = m + "\n"
-    print(m)
-    print(m, file=sys.stderr)
-    try:
-        sys.__stdout__.write(mn)
-        sys.__stderr__.write(mn)
-        sys.__stdout__.flush()
-        sys.__stderr__.flush()
-    except:
-        pass
-
-
 def debug(self, inp=None):
     if DEBUG_TRANSFORMS:
         rnd = self.random if hasattr(self, "random") else None

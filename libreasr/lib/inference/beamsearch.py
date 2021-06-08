@@ -308,8 +308,13 @@ def start_rnnt_beam_search(
     joint_cache_sz = bsopts.get("joint_cache_sz")
     score_cache_sz = bsopts.get("score_cache_sz")
     debug = bsopts.get("debug")
+    
+    # extra vars
+    device = predictor_output.device
 
     def _memo_predictor(prev_tokens, cache):
+        nonlocal predictor_state
+
         # transforms to pred_tokens
         pred_tokens = tuple(filter(lambda x: x != blank, prev_tokens))
 
@@ -320,7 +325,7 @@ def start_rnnt_beam_search(
 
         # backtrack until known
         remaining = tuple()
-        state = list(cache[(bos,)])
+        state = list(predictor_state)
         for i in range(len(pred_tokens)):
             toks = pred_tokens[:i]
             if toks in cache:
@@ -328,15 +333,22 @@ def start_rnnt_beam_search(
                 state = list(cache[toks][1])
 
         # otherwise compute & insert
-        t = torch.LongTensor([list(remaining)])
+        t = torch.LongTensor([list(remaining)]).to(device)
         output, state = predictor(t, state=state)
+
+        # only keep last
+        output = output[:, -1:]
+
         cache[pred_tokens] = (output, list(state))
         return output
 
     def _memo_joint(key, inp, cache):
         if key in cache:
             return cache[key], False
-        rj = joint(*inp)
+        try:
+            rj = joint(*inp)
+        except:
+            from IPython.core.debugger import set_trace; set_trace()
         cache[key] = rj
         return rj, True
 

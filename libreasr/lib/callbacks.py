@@ -224,22 +224,8 @@ class Tensorboard(Callback):
             else:
                 self.valid_batch_count += 1
 
-    def after_pred(self):
-        pass
-
-    def after_loss(self):
-        if not self.training:
-            self.writer.add_scalar(
-                "loss/valid", self.learn.loss, self.valid_batch_count
-            )
-
     def after_backward(self):
         if self.training and self.steps % LOG_EVERY_N_STEPS == 0:
-            try:
-                loss = self.learn.smooth_loss
-                self.writer.add_scalar("loss/train", loss, self.train_batch_count)
-            except:
-                pass
             self.writer.add_scalar(
                 "data/seqlen/x", self.learn.xb[0][0].size(1), self.train_batch_count
             )
@@ -291,3 +277,17 @@ class Tensorboard(Callback):
 
     def after_fit(self):
         self.is_fitting = False
+
+    def report_loss_dict(self, loss_dict):
+        if self.training:
+            batch_cnt = self.train_batch_count
+            suffix = "train"
+            div = LOG_EVERY_N_STEPS
+        else:
+            batch_cnt = self.valid_batch_count
+            suffix = "valid"
+            div = 1
+        if self.steps % div == 0:
+            for k, v in loss_dict.items():
+                v = v.detach().cpu().float().mean().item()
+                self.writer.add_scalar(k + "/" + suffix, v, batch_cnt)
