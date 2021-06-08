@@ -16,9 +16,9 @@ DEFAULT_MAX_ITERS = 5
 DEFAULT_BEAM_SEARCH_OPTS = {
     "beam_width": 8,
     "topk_next": 2,
-    "predictor_cache_sz": 1024,
-    "joint_cache_sz": 1024,
-    "score_cache_sz": 1024,
+    "predictor_cache_sz": 128, # 1024,
+    "joint_cache_sz": 128, # 1024,
+    "score_cache_sz": 128, # 1024,
     "debug": False,
 }
 

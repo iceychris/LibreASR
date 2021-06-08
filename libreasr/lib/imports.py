@@ -57,7 +57,6 @@ from libreasr.lib.utils import *
 from libreasr.lib.callbacks import *
 from libreasr.lib.transforms import *
 from libreasr.lib.language import get_language
-from libreasr.lib.loss import *
 from libreasr.lib.metrics import *
 from libreasr.lib.data import *
 from libreasr.lib.decoders import *

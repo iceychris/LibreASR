@@ -12,6 +12,20 @@ LANGS = "de,en,fr,sv,es,eo,it,nl".split(",")
 LANG_TO_IDX = {l: i for i, l in enumerate(LANGS)}
 
 
+def warn(msg):
+    m = f"WARN | {msg}"
+    mn = m + "\n"
+    print(m)
+    print(m, file=sys.stderr)
+    try:
+        sys.__stdout__.write(mn)
+        sys.__stderr__.write(mn)
+        sys.__stdout__.flush()
+        sys.__stderr__.flush()
+    except:
+        pass
+
+
 def update(d, u):
     "from: https://stackoverflow.com/questions/3232943/update-value-of-a-nested-dictionary-of-varying-depth"
     for k, v in u.items():

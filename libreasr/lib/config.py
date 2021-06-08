@@ -12,7 +12,7 @@ from libreasr.lib.language import get_language
 from libreasr.lib.builder import ASRDatabunchBuilder
 from libreasr.lib.data import ASRDatabunch
 from libreasr.lib.models import get_model
-from libreasr.lib.learner import ASRLearner
+from libreasr.lib.learner import LibreASRLearner
 from libreasr.lib.lm import load_lm
 from libreasr.lib.download import download_all
 
@@ -248,7 +248,7 @@ def parse_and_apply_config(
         return conf, lang, m, tfms
     else:
         # grab learner
-        learn = ASRLearner.from_config(conf, db, m)
+        learn = LibreASRLearner.from_config(conf, db, m)
         learn.lang = lang
 
         return conf, lang, builder_train, builder_valid, db, m, learn
