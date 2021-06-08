@@ -52,6 +52,7 @@ def transcribe_stream(
             yield aud
 
     # inference
+    output_found = False
     with torch.no_grad():
         outputs = model.transcribe_stream(stream_fn(), lang.denumericalize, **kwargs)
         last = ""
@@ -59,7 +60,12 @@ def transcribe_stream(
             y = lang.denumericalize(y)
             if y != last:
                 last = y
+                output_found = True
                 yield y
+
+    # if we haven't found any hypothesis
+    if not output_found:
+        yield ""
 
 
 def path_to_audio_generator(

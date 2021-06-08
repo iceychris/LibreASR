@@ -17,6 +17,10 @@ from libreasr.lib.memo import mk_memo
 #  alpha parameter.
 #  See https://www.youtube.com/watch?v=ZGUZwk7xIwk
 BEAM_SEARCH_SCORE_ALPHA = 1.0  # 0.0
+
+# multiplicative factor for merging
+#  when multiple hypotheses
+#  with the same transcript emerge
 BEAM_SEARCH_INITIAL_MULTIPLIER = 1.0
 
 
@@ -48,7 +52,7 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
             # probs are expected to be elem [0.0, 1.0[
             tokens, probs = self.tokens, self.probs
             alpha = BEAM_SEARCH_SCORE_ALPHA
-            probs = np.array([*probs, self.multiplier])
+            probs = np.array(probs + [self.multiplier])
             factor = 1 / len(tokens) ** alpha
             score = factor * np.sum(np.log(probs))
             return score
@@ -190,7 +194,7 @@ class Beamer(nn.Module):
 
             # option 2
             #  naively increase the multiplier
-            s = g[0]  # max(g)
+            s = max(g)
             keep = s.with_multiplier(s.multiplier * len(g))
             candidates.append(keep)
 

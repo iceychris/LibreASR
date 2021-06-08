@@ -504,6 +504,7 @@ class Transducer(Module):
             self.joint = Joint(
                 out_sz, joint_sz, vocab_sz, joint_method, reversible=joint_reversible
             )
+        self.feature_sz = feature_sz
         self.lang = lang
         self.blank = blank
         # TODO: dont hardcode
@@ -931,7 +932,7 @@ class Transducer(Module):
         fuser = LMFuser(self.lm)
 
         # functions
-        etrb = TensorRingBuffer(enc_rb_sz, (1, 0, 1280), dim=1, device=dev)
+        etrb = TensorRingBuffer(enc_rb_sz, (1, 0, self.feature_sz), dim=1, device=dev)
 
         def enc(x, state, return_state):
             if etrb.append(x):
@@ -1028,6 +1029,7 @@ class Transducer(Module):
         # T > 1 is possible
         blanks = 0
         nonblanks = 0
+        output_found = False
         for chunk in stream:
 
             # in case we get a None, just continue
@@ -1063,7 +1065,12 @@ class Transducer(Module):
                 tok = best.tokens[1:]
                 tok = list(filter(lambda x: x != self.blank, tok))
                 if len(tok) > 0:
+                    output_found = True
                     yield tok, reset
+
+        # if we haven't found any hypothesis
+        if not output_found:
+            yield [], reset
 
 
 class Dummy(Module):
