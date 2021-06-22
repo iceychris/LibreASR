@@ -30,21 +30,44 @@
   <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/master/images/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
 
+## Installation
 
-## Links
+```
+docker run -it -p 8080:8080 iceychris/libreasr:latest
+```
 
-* visit [LibreASRs documentation](https://libreasr.readthedocs.io)
+Then head over to `http://localhost:8080/`
 
-* [join the Discord Server](https://discord.gg/wrcjdv9ZrR) for updates on the project
+## Training
 
+ - Obtain a Librispeech dataset or otherwise (requires transcript.)
+
+ **If using a custom dataset, modify `create-asr-dataset.py`**
+
+ - Process your datasets via `create-asr-dataset.py` example:
+
+```bash
+python3 create-asr-dataset.py /data/common-voice-english common-voice --lang en --workers 4
+```
+
+The output will be saved in multiple `asr-dataset.csv` for training.
+
+ - Edit the config inside `testing.yaml` to point to your data, tweak transformers and otherwise.
+
+ - Adjust and run `libreasr.ipynb` to start training.
+
+**View training via tensorboard**
+
+The model with the best validation loss will get saved to `models/model.pth`, the model with the best WER ends up in `models/best_wer.pth`
+
+## Usage
+
+**Inference coming soon**
 
 ## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
-* [open an issue](https://github.com/iceychris/LibreASR/issues/new)
+Please make sure to update tests as appropriate.
 
-* [create a pull request](https://github.com/iceychris/LibreASR/pulls)
-
-
-## Stargazers
-
-[![Stargazers over time](https://starchart.cc/iceychris/LibreASR.svg)](https://starchart.cc/iceychris/LibreASR)
+## License
+[MIT](https://choosealicense.com/licenses/mit/)
