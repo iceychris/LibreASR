@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  <a href='https://libreasr.readthedocs.io/en/latest/?badge=latest'>
+  <a href='https://libreasr.github.io/'>
     <img src='https://readthedocs.org/projects/libreasr/badge/?version=latest' alt='Documentation Status' />
   </a>
   <a href="https://github.com/iceychris/libreasr/actions">
@@ -27,22 +27,27 @@
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/master/assets/libreasr.gif" alt="LibreASR in Action"></a>
+  <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/dev/assets/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
 
 
 ## Links
 
-* visit [LibreASRs documentation](https://libreasr.readthedocs.io)
+* visit [LibreASRs documentation](https://libreasr.github.io/)
 
 * [join the Discord Server](https://discord.gg/wrcjdv9ZrR) for updates on the project
 
 
 ## Contributing
 
-* [open an issue](https://github.com/iceychris/LibreASR/issues/new)
+[Pull requests](https://github.com/iceychris/LibreASR/pulls) are welcome. For major changes, please [open an issue](https://github.com/iceychris/LibreASR/issues/new) first to discuss what you would like to change.
 
-* [create a pull request](https://github.com/iceychris/LibreASR/pulls)
+Please make sure to update tests as appropriate.
+
+
+## License
+
+[MIT](https://choosealicense.com/licenses/mit/)
 
 
 ## Stargazers
