@@ -23,6 +23,7 @@ html body {
 .transcript {
   min-height: 7em;
   font-size: 1.5em;
+  white-space: pre-line;
 }
 
 .info {

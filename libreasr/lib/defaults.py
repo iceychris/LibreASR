@@ -14,8 +14,8 @@ MODEL_TEMP = 1.0
 # beam search
 DEFAULT_MAX_ITERS = 5
 DEFAULT_BEAM_SEARCH_OPTS = {
-    "beam_width": 8,
-    "topk_next": 2,
+    "beam_width": 4, # 8,
+    "topk_next": 2, # 2,
     "predictor_cache_sz": 128, # 1024,
     "joint_cache_sz": 128, # 1024,
     "score_cache_sz": 128, # 1024,
@@ -29,6 +29,9 @@ DEFAULT_STREAM_OPTS = {
     "buffer_n_frames": DEFAULT_STREAM_BUFFER_N_FRAMES,
     "sr": 16000,
     "chunk_sz": DEFAULT_STREAM_CHUNK_SZ,
+    "assistant": True,
+    "assistant_keywords": ["computer"],
+    "debug": True,
 }
 
 # example audio

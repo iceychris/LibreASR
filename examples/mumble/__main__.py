@@ -5,8 +5,11 @@ import subprocess
 import time
 import queue
 import pprint
+import os
+from subprocess import Popen
 
 import numpy as np
+from scipy.signal import resample_poly
 
 import pymumble_py3
 from pymumble_py3.callbacks import (
@@ -15,6 +18,7 @@ from pymumble_py3.callbacks import (
 )
 
 from libreasr import LibreASR
+from libreasr.lib.inference.events import *
 
 
 class Chunker:
@@ -26,7 +30,7 @@ class Chunker:
 
     def __call__(self, raw):
         # convert to numpy float32
-        arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32_767.
 
         # add last
         if self.last is not None:
@@ -70,7 +74,6 @@ def on_sound_received(q_recv, q_send, chunker, whitelist, user, soundchunk):
         if ready:
             q_recv.put(chunk, block=False)
 
-
 def libreasr_process(lang, config_path, q_recv, q_send, sr=48000):
 
     def hook(conf):
@@ -85,14 +88,37 @@ def libreasr_process(lang, config_path, q_recv, q_send, sr=48000):
 
     # main loop
     gen = libreasr.stream(q_recv, sr=sr)
-    for transcript in gen:
-        q_send.put(transcript, block=False)
-
+    for event in gen:
+        if event.tag == EventTag.SENTENCE:
+            text = event.transcript
+            q_send.put(text, block=False)
+        if event.tag == EventTag.TTS:
+            audio = event.audio
+            q_send.put(audio, block=False)
 
 def get_channel_id(mumble, channel):
     for cid, vals in mumble.channels.items():
         if vals["name"] == channel:
             return cid
+
+
+def chat(mumble, channel, text):
+    chans = mumble.channels
+    chans[get_channel_id(mumble, channel)].send_text_message(text)
+
+
+def resample(audio, from_sr=22050, to_sr=48000):
+    audio = audio.astype(np.float32)
+    audio = resample_poly(audio, to_sr, from_sr)#  / 32_767.
+    audio = audio.astype(np.int16)
+    audio = audio.tobytes()
+    return audio
+
+
+def voice(mumble, audio, do_resample=True):
+    if do_resample:
+        audio = resample(audio)
+    mumble.sound_output.add_sound(audio)
 
 
 if __name__ == "__main__":
@@ -151,27 +177,33 @@ if __name__ == "__main__":
         mumble.callbacks.set_callback(CONN, on_connected)
         mumble.callbacks.set_callback(PCS, on_sound_received)
         mumble.set_receive_sound(1)  # we want to receive sound
+    else:
+        mumble = None
 
     ###
     # initialize LibreASR subprocess
     ###
 
-    # kick off process
+    # start LibreASR (separate thread)
     from threading import Thread
 
     t = Thread(target=libreasr_process, args=(lang, config_path, q_recv, q_send))
     t.start()
 
-    # loop forever
+    # start mumble (this thread)
     if not dry_run:
         mumble.start()
+
+    # loop forever
     while 1:
         # continuously receive & output transcripts
         if not dry_run:
             result = None
             while q_send.qsize() > 0:
                 result = q_send.get()
-            if result is not None:
-                chans = mumble.channels
-                chans[get_channel_id(mumble, channel)].send_text_message(result)
+                if result is not None:
+                    if isinstance(result, str):
+                        chat(mumble, channel, result)
+                    elif isinstance(result, np.ndarray):
+                        voice(mumble, result)
         time.sleep(0.5)

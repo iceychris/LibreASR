@@ -4,6 +4,7 @@ from threading import Thread
 from queue import Queue
 import sys
 import itertools
+import multiprocessing
 
 import numpy as np
 import pyaudio
@@ -22,7 +23,8 @@ def recorder_task(q, sr, gain):
     def callback(byts, frame_count, time_info, status):
         arr = np.frombuffer(byts, dtype=np.int16)
         arr = arr * gain
-        q.put(arr)
+        q.put_nowait(arr)
+        print("feed")
         return (None, pyaudio.paContinue)
 
     chunk = int(sr * 0.08)
@@ -45,16 +47,23 @@ def record(sr, gain, timeout=None):
     job_done = object()
 
     # Start in a new thread
+    # proc = multiprocessing.Process(target=recorder_task, args=(q, sr, gain))
+    # proc.start()
     thread = Thread(target=recorder_task, args=(q, sr, gain))
     thread.start()
 
     # Consumer
+    block = False
+    timeout = timeout or 0.01
     print("Recording...")
     while True:
-        aud = q.get(True, timeout)
-        if aud is job_done:
-            break
-        yield aud
+        try:
+            aud = q.get(block, timeout)
+            print("got")
+            if aud is job_done:
+                break
+            yield aud
+        except: pass
 
 
 if __name__ == "__main__":
@@ -101,7 +110,17 @@ if __name__ == "__main__":
     sys.path.append("/workspace")
     from libreasr import LibreASR
 
-    l = LibreASR(args.lang, config_path=args.config_path)
+    def hook(conf):
+        conf["model"]["loss"] = False
+        conf["cuda"]["enable"] = False
+        conf["cuda"]["device"] = "cpu"
+        conf["model"]["load"] = True
+
+        # load german model
+        conf["model"]["path"] = {"n": "./models/de-4096.pth"}
+        conf["tokenizer"]["model_file"] = "./tmp/tokenizer-de-4096.yttm-model"
+
+    l = LibreASR(args.lang, config_path=args.config_path, config_hook=hook)
     l.load_inference()
 
     # start threads
@@ -109,8 +128,5 @@ if __name__ == "__main__":
 
     # retrieve & display transcripts
     generator = record(args.sr, args.gain)
-    for i, (diff, y_all) in enumerate(l.stream(generator, sr=args.sr)):
-        print(diff, end="")
-        if (i + 1) % 10 == 0:
-            print()
-        sys.stdout.flush()
+    for i, transcript in enumerate(l.stream(generator, sr=args.sr)):
+        print(transcript)

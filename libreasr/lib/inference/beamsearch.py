@@ -161,15 +161,18 @@ class Beamer(nn.Module):
         super().__init__()
         self.initial = initial
         self.joint_fn = joint_fn
-        self.beam = [initial]
         self.beam_width = beam_width
         self.topk_next = topk_next
         self.blank_token_idx = blank_token_idx
         self.max_iters = max_iters
         self.debug = debug
-        self.t = 0
+        self.reset()
         if debug:
             print(f"[beamsearch] bw={beam_width}, topk={topk_next}, mi={max_iters}")
+
+    def reset(self):
+        self.beam = [self.initial]
+        self.t = 0
 
     def forward(self, enc):
         bw = self.beam_width
@@ -245,8 +248,8 @@ class Beamer(nn.Module):
         # increment frame counter
         self.t += 1
 
-        # return current best
-        return self.best
+        # return all hypotheses
+        return [(x.tokens, x.score) for x in self.all]
 
     @property
     def all(self):

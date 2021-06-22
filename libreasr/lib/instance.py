@@ -87,7 +87,7 @@ class LibreASRInstance:
         return _infer(self.model, batches, lens, batched=True, **kwargs)
 
     def _transcribe_stream_generator(self, sth, **kwargs):
-        from libreasr.lib.stream import transcribe_stream, path_to_audio_generator
+        from libreasr.lib.inference.stream import transcribe_stream, path_to_audio_generator
 
         def stream(sth):
             return transcribe_stream(
@@ -96,7 +96,7 @@ class LibreASRInstance:
 
         def get_result(stream_output):
             # grab last output
-            return list(stream_output)[-1]
+            return list(stream_output)[-1].transcript
 
         transcripts = None
         if isinstance(sth, str):
@@ -113,7 +113,7 @@ class LibreASRInstance:
         return transcripts
 
     def _transcribe_stream_queue(self, sth, **kwargs):
-        from libreasr.lib.stream import transcribe_stream
+        from libreasr.lib.inference.stream import transcribe_stream
 
         def yielder():
             while True:

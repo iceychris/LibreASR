@@ -4,7 +4,7 @@ package LibreASR;
 
 service LibreASR {
   rpc Transcribe(Audio) returns (Transcript) {}
-  rpc TranscribeStream(stream Audio) returns (stream Transcript) {}
+  rpc TranscribeStream(stream Audio) returns (stream Event) {}
 }
 
 message Audio {
@@ -15,4 +15,20 @@ message Audio {
 message Transcript {
   string data = 1;
 }
+
+message TranscriptEvent {
+  string transcript = 1;
+}
+
+message SentenceEvent {
+  string transcript = 1;
+}
+
+message Event {
+  oneof content {
+    TranscriptEvent te = 1;
+    SentenceEvent se = 2;
+  }
+}
+
 

@@ -31,6 +31,8 @@ class App extends React.Component {
         "languages": [],
       },
       allowRecording: false,
+      previousSentences: [],
+      currentSentence: "",
     };
     this.handleClickRecordStream = this.handleClickRecordStream.bind(this);
     this.handleLanguageChange = this.handleLanguageChange.bind(this);
@@ -109,7 +111,7 @@ class App extends React.Component {
 
   startRecording() {
     const onAudioProcess = (function (e) {
-        // Do something with the data, e.g. convert it to WAV
+        // populate info
         const sr = e.inputBuffer.sampleRate;
         const lang = this.state.selectedLanguage;
         const data = e.inputBuffer.getChannelData(0);
@@ -117,8 +119,27 @@ class App extends React.Component {
             sampleRate: sr + " Hz",
             bufferLength: e.inputBuffer.length,
         })
-        transcribe(data, lang, sr, (transcript) => {
-            document.getElementById("transcript").innerText = transcript
+
+        // retrieve transcript events
+        transcribe(data, lang, sr, (event) => {
+            if("te" in event) {
+              // partial transcript
+              const text = event.te.transcript
+              this.setState({
+                "currentSentence": text,
+              })
+            } else if("se" in event) {
+              // full sentence
+              const text = event.se.transcript
+              this.setState((state) => {
+                const ps = state.previousSentences;
+                ps.push(text)
+                return {
+                  "previousSentences": ps,
+                  "currentSentence": "",
+                }
+              })
+            }
         });
     }).bind(this);
 
@@ -236,7 +257,11 @@ class App extends React.Component {
         <div className="container">
 
           <div className="row">
-            <div className="transcript well" id="transcript"></div>
+            <div className="transcript well" id="transcript">
+              {this.state.previousSentences.map((s) =>
+                s + "\n")}
+              {this.state.currentSentence}
+            </div>
           </div>
 
           <div className="row text-center">
