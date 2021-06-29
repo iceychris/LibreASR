@@ -326,39 +326,33 @@ class Joint(Module):
     def __init__(self, out_sz, joint_sz, vocab_sz, joint_method, reversible=False):
         self.joint_method = joint_method
         self.reversible = reversible
-        if joint_method == "add":
-            input_sz = out_sz
-        elif joint_method == "concat" or self.joint_method == "comb":
-            input_sz = 2 * out_sz
-        else:
-            raise Exception("No such joint_method")
         if reversible:
             import memcnn
 
             inv_joint = memcnn.AdditiveCoupling(
-                Fm=InnerJoint(input_sz // 2, joint_sz // 2, vocab_sz // 2),
-                Gm=InnerJoint(input_sz // 2, joint_sz // 2, vocab_sz // 2),
+                Fm=InnerJoint(out_sz // 2, joint_sz // 2, vocab_sz // 2),
+                Gm=InnerJoint(out_sz // 2, joint_sz // 2, vocab_sz // 2),
                 split_dim=3,
             )
             assert memcnn.is_invertible_module(
-                inv_joint, test_input_shape=(4, 3, 2, input_sz)
+                inv_joint, test_input_shape=(4, 3, 2, out_sz)
             )
             inv_joint = memcnn.InvertibleModuleWrapper(
                 fn=inv_joint, keep_input=False, keep_input_inverse=False
             )
             assert memcnn.is_invertible_module(
-                inv_joint, test_input_shape=(4, 3, 2, input_sz)
+                inv_joint, test_input_shape=(4, 3, 2, out_sz)
             )
             self.joint = inv_joint
         else:
             # less memory usage
             # self.joint = nn.Sequential(
             #     nn.Tanh(),
-            #     nn.Linear(input_sz, vocab_sz),
+            #     nn.Linear(out_sz, vocab_sz),
             # )
             # custom LibreASR
             self.joint = nn.Sequential(
-                nn.Linear(input_sz, joint_sz),
+                nn.Linear(out_sz, joint_sz),
                 nn.Tanh(),
                 nn.Linear(joint_sz, vocab_sz),
             )
@@ -484,7 +478,8 @@ class Transducer(Module):
         embed_sz,
         vocab_sz,
         hidden_sz,
-        out_sz,
+        out_sz_enc,
+        out_sz_pre,
         joint_sz,
         lang,
         l_e=6,
@@ -517,7 +512,7 @@ class Transducer(Module):
             self.encoder = eval(encoder_kwargs["name"])(
                 feature_sz,
                 hidden_sz=hidden_sz,
-                out_sz=out_sz,
+                out_sz=out_sz_enc,
                 **encoder_kwargs,
             )
         if enable_predictor:
@@ -525,12 +520,14 @@ class Transducer(Module):
                 vocab_sz,
                 embed_sz=embed_sz,
                 hidden_sz=hidden_sz,
-                out_sz=out_sz,
+                out_sz=out_sz_pre,
                 **predictor_kwargs,
             )
         if enable_joint:
+            assert joint_method == "concat"
+            o_sz = out_sz_enc + out_sz_pre
             self.joint = Joint(
-                out_sz, joint_sz, vocab_sz, joint_method, reversible=joint_reversible
+                o_sz, joint_sz, vocab_sz, joint_method, reversible=joint_reversible
             )
         self.feature_sz = feature_sz
         self.lang = lang
@@ -546,7 +543,7 @@ class Transducer(Module):
         self.lm = None
         self.learnable_stft = learnable_stft
         if auxiliary_ctc_loss:
-            self.ctc_head = nn.LSTM(out_sz, vocab_sz, num_layers=1, batch_first=True)
+            self.ctc_head = nn.LSTM(out_sz_enc, vocab_sz, num_layers=1, batch_first=True)
         self.aux_ctc = auxiliary_ctc_loss
         self.loss = RNNTLoss(aux_ctc=auxiliary_ctc_loss) if loss else None
         self.ctx = Benchmark if benchmark else contextlib.suppress
@@ -560,7 +557,8 @@ class Transducer(Module):
             conf["model"]["embed_sz"],
             conf["model"]["vocab_sz"],
             conf["model"]["hidden_sz"],
-            conf["model"]["out_sz"],
+            conf["model"]["out_sz_enc"],
+            conf["model"]["out_sz_pre"],
             conf["model"]["joint_sz"],
             lang,
             p_e=conf["model"]["encoder"]["dropout"],
@@ -644,7 +642,7 @@ class Transducer(Module):
         # N: batch size
         # T: n frames (time)
         # H: hidden features
-        N, T, H = encoder_out.size()
+        N, T, H_e = encoder_out.size()
 
         # predictor
         with self.ctx("predictor"):
@@ -654,16 +652,17 @@ class Transducer(Module):
             # yl here because we want to omit the last label
             # in the resulting state (we had (yl + 1))
             predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
-            U = predictor_out.size(1)
+            N, U, H_p = predictor_out.size()
 
         # expand:
         # we need to pass [N, T, U, H] to the joint network
         # NOTE: we might want to not include padding here?
         with self.ctx("expand"):
             M = max(T, U)
-            sz = (N, T, U, H)
-            encoder_out = encoder_out.unsqueeze(2).expand(sz).contiguous()
-            predictor_out = predictor_out.unsqueeze(1).expand(sz).contiguous()
+            sz_e = (N, T, U, H_e)
+            sz_p = (N, T, U, H_p)
+            encoder_out = encoder_out.unsqueeze(2).expand(sz_e).contiguous()
+            predictor_out = predictor_out.unsqueeze(1).expand(sz_p).contiguous()
             # print(encoder_out.shape, predictor_out.shape)
 
         # joint & project
@@ -881,10 +880,12 @@ class Transducer(Module):
         x = x[None]
 
         # preprocess
-        x = self.preprocessor(x)
+        with torch.no_grad():
+            x = self.preprocessor(x)
 
         # encode full spectrogram (all timesteps)
-        encoder_out = self.encoder(x)[0]
+        with torch.no_grad():
+            encoder_out = self.encoder(x)[0]
 
         # predictor: BOS goes first
         y_one_char = torch.LongTensor([[self.bos]]).to(encoder_out.device)
@@ -1059,14 +1060,14 @@ class MLP(nn.Module):
             return x
 
 
-class ContrastiveTransducer(Transducer):
+class SemiSupervisedTransducer(Transducer):
     def __init__(
         self,
         *args,
         hidden_sz=1024,
         cache_sz=128,
         modalities=2,
-        mode="simsiam",  # simcse or clip or simsiam
+        mode="simsiam",  # simcse or simsiam or contrastive or wav2vec2_contrastive
         random_masking=True,
         **kwargs,
     ):
@@ -1078,6 +1079,16 @@ class ContrastiveTransducer(Transducer):
             self.latents = nn.ModuleList(
                 [nn.Linear(a, b, bias=False) for _ in range(modalities)]
             )
+        if mode == "wav2vec2_contrastive":
+            from transformers import AutoTokenizer, AutoModel, Wav2Vec2FeatureExtractor, Wav2Vec2Processor
+            name, cut_at = "facebook/wav2vec2-large-xlsr-53", kwargs.pop("wav2vec2_cut", 15)
+            model = AutoModel.from_pretrained(name)
+            model.encoder.layers = model.encoder.layers[:cut_at]
+            model = model.eval().cuda()
+            self.wav2vec2 = [model]
+            print("Contrastive Training with Wav2Vec2:")
+            print(f" => Using '{name}' model")
+            print(f" => Keeping {cut_at} attention layers")
         temps = 1 if modalities == 2 else 3
         self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
         self.cache_sz = cache_sz
@@ -1089,20 +1100,29 @@ class ContrastiveTransducer(Transducer):
 
     @staticmethod
     def from_config(conf, lang, lm=None, cls=None):
-        cls = ContrastiveTransducer
+        cls = SemiSupervisedTransducer
         return Transducer.from_config(conf, lang, lm, cls)
 
     def param_groups(self):
+        encoder_prepro_params = [
+            *self.preprocessor.param_groups(),
+            *self.encoder.param_groups(),
+        ]
         if self.mode == "simsiam":
             return [
-                [
-                    *self.preprocessor.param_groups(),
-                    *self.encoder.param_groups(),
-                ],
+                encoder_prepro_params,
                 [
                     self.temperature,
                     *list(self.projection.parameters()),
                     *list(self.prediction.parameters()),
+                ],
+            ]
+        elif self.mode == "wav2vec2_contrastive":
+            return [
+                encoder_prepro_params,
+                [
+                    self.temperature,
+                    *[l.weight for l in self.latents],
                 ],
             ]
         return [
@@ -1235,42 +1255,60 @@ class ContrastiveTransducer(Transducer):
 
         # unpack
         x, y, xl, yl = tpl
+        N = x.size(0)
 
         # preprocess signal
+        x_raw, xl_raw = x, xl
         x, xl = self.preprocessor(self.augment(x), xl)
 
         # [N, T, H, W] -> [N, T, H]
         x = x.reshape(x.size(0), x.size(1), -1)
 
-        # encoder
+        # encoder A (r1)
         r1 = self.encoder(x, lengths=xl)
+        T = r1.size(1)
+        r1mask = (
+            torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+        )
 
-        # N: batch size
-        # T: n frames (time)
-        # H: hidden features
-        N, T, H = r1.size()
+        # encoder B (r2)
+        if self.mode == "wav2vec2_contrastive":
+            # zero mean + unit variance
+            x, xl = x_raw, xl_raw
+            x = (x - x.mean(0)) / (x.std(0) + 1e-5)
 
-        # predictor
-        # concat first bos (yconcat is y shifted right by 1)
-        bos = self.grab_bos(y, yl, bs=N, device=x.device)
-        yconcat = torch.cat((bos, y), dim=1)
-        # yl here because we want to omit the last label
-        # in the resulting state (we had (yl + 1))
-        r2, _ = self.predictor(yconcat, lengths=yl + 1)
-        U = r2.size(1)
+            # attention mask / mask for later
+            attn_mask = (
+                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+            )
+
+            # assemble
+            inp = {
+                "input_values": x[:, :, 0, 0],
+                "attention_mask": attn_mask
+            }
+
+            # extract
+            with torch.no_grad():
+                r2 = self.wav2vec2[0](**inp).last_hidden_state
+            r2mask = torch.arange(r2.size(1), dtype=xl.dtype, device=xl.device)[None, :] > -1
+        else:
+            # predictor
+            # concat first bos (yconcat is y shifted right by 1)
+            bos = self.grab_bos(y, yl, bs=N, device=x.device)
+            yconcat = torch.cat((bos, y), dim=1)
+            # yl here because we want to omit the last label
+            # in the resulting state (we had (yl + 1))
+            r2, _ = self.predictor(yconcat, lengths=yl + 1)
+            U = r2.size(1)
+            r2mask = (
+                torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
+            )
 
         ###
         # following lucidrains CLIP model:
         #  https://github.com/lucidrains/DALLE-pytorch/blob/main/dalle_pytorch/dalle_pytorch.py
         ###
-
-        # create masks
-        r1mask = (
-            torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
-        )
-        r2mask = (
-            torch.arange(U, dtype=yl.dtype, device=yl.device)[None, :] < yl[:, None]
-        )
 
         # reduce
         r1 = masked_mean(
@@ -1302,7 +1340,9 @@ class ContrastiveTransducer(Transducer):
         # calculate losses
         l1 = F.cross_entropy(sim, labels)
         l2 = F.cross_entropy(sim.T, labels)
-        return (l1 + l2) / 2.0
+        return {
+            "loss": (l1 + l2) / 2.0
+        }
 
     def forward(self, tpl, return_logits=False):
         """
@@ -1316,7 +1356,7 @@ class ContrastiveTransducer(Transducer):
             return self.forward_simsiam(tpl, return_logits=return_logits)
 
         # special path for contrastive
-        if self.mode == "contrastive":
+        if "contrastive" in self.mode:
             return self.forward_contrastive(tpl, return_logits=return_logits)
 
         # no such method

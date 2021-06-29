@@ -57,6 +57,8 @@ def get_dataset_paths(conf, mode):
     if lang == "multi":
         paths = []
         for l in conf["datasets"].keys():
+            if conf["datasets"][l] is None:
+                continue
             dses_l = [conf["dataset_paths"][x] for x in conf["datasets"][l][mode]]
             [paths.append(x) for x in dses_l]
     else:
@@ -79,14 +81,15 @@ class ASRDatabunchBuilder:
         builder = (
             ASRDatabunchBuilder().set_mode(mode).set_suffix(suffix).multi(paths, pcent)
         )
-        if conf["apply_limits"]:
+        if conf["apply_x_limits"]:
+            builder = builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
+        if conf["apply_y_limits"]:
             builder = (
-                builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
-                .y_bounds(conf["y_min"], conf["y_max"])
+                builder.y_bounds(conf["y_min"], conf["y_max"])
                 .set_max_words(conf["y_max_words"])
             )
-            if conf["shuffle_builder"][mode]:
-                builder.shuffle()
+        if conf["shuffle_builder"][mode]:
+            builder.shuffle()
         builder.build()
         return builder
 
@@ -279,11 +282,13 @@ class ASRDatabunchBuilder:
             plt.show()
             if save:
                 plt.savefig("./plots/figures/data-y.png", dpi=300)
-            plt.hist(self.df.xlen.values / self.df.ylen.values, bins=50)
-            plt.title("xlen/ylen")
-            plt.show()
-            if save:
-                plt.savefig("./plots/figures/data-x-y.png", dpi=300)
+            try:
+                plt.hist(self.df.xlen.values / self.df.ylen.values, bins=50)
+                plt.title("xlen/ylen")
+                plt.show()
+                if save:
+                    plt.savefig("./plots/figures/data-x-y.png", dpi=300)
+            except: pass
         return self
 
 
