@@ -21,7 +21,7 @@ def check_hash(path, sha256):
     return h.hexdigest() == sha256
 
 
-def download(id, sha256, path, storage="gdrive"):
+def download(id, sha256, path, storage="gdrive", **kwargs):
     if storage == "gdrive":
         if not os.path.exists(path) or not check_hash(path, sha256):
             head, tail = os.path.split(path)

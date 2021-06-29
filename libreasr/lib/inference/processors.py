@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from libreasr.lib.inference.events import *
+from libreasr.lib.utils import warn_about_license
 
 
 class InferenceProcessor(ABC):
@@ -83,11 +84,11 @@ class VADProcessor(InferenceProcessor):
     def __init__(self, sr=16000, vad_duration=0.25, cooldown_duration=0.25, threshold=0.1, debug=False):
         super().__init__(debug=debug)
 
-        # warn about license
-        self.warn("*" * 64)
-        self.warn("Using Silero VAD...")
-        self.warn("Check its license: https://github.com/snakers4/silero-vad")
-        self.warn("*" * 64)
+        warn_about_license(
+            "VADProcessor",
+            "Silero VAD",
+            "https://github.com/snakers4/silero-vad"
+        )
 
         # load silero vad
         model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
@@ -143,11 +144,11 @@ class WakewordProcessor(InferenceProcessor):
     def __init__(self, sr=16000, frame_length=512, keywords=["computer"], debug=False):
         super().__init__(debug=debug)
 
-        # warn about license
-        self.warn("*" * 64)
-        self.warn("Using Picovoice Porcupine Wake-Word-Detection...")
-        self.warn("Check its license: https://github.com/Picovoice/porcupine")
-        self.warn("*" * 64)
+        warn_about_license(
+            "WakewordProcessor",
+            "Picovoice Porcupine Wake-Word-Detection",
+            "https://github.com/Picovoice/porcupine"
+        )
 
         # load pvporcupine
         import pvporcupine
@@ -251,7 +252,7 @@ class EOSProcessor(InferenceProcessor):
     of duration `silence`.
     Fires `SilenceEvent`.
     """
-    def __init__(self, sr=16000, silence=1.0, debug=False):
+    def __init__(self, sr=16000, silence=2.0, debug=False):
         super().__init__(debug=debug)
 
         # args
@@ -344,14 +345,17 @@ class AssistantProcessor(InferenceProcessor):
 
     def answer(self, question):
         text = question
+        answer = "Ich habe deine Frage nicht verstanden." 
         if "hallo" in text or "welt" in text:
             answer = "Hallo ich bin ein automatisches Spracherkennungssystem."
-            return answer
-        if "wetter" in text and "morgen" in text:
+        if "wetter" in text and ("heute" in text or "morgen" in text):
             # TODO: use wttr.in to get the weather :)
             answer = "Ich weiß nicht. Frag doch Google oder Siri!"
-            return answer
-        return "Ich habe deine Frage nicht verstanden."
+        if "licht" in text or "aus" in text:
+            answer = "Licht aus."
+        if "licht" in text and ("ein" in text or "an" in text):
+            answer = "Licht ein."
+        return answer
 
     def on_event(self, event: InferenceEvent, bus: EventBus):
         if event.tag == EventTag.SENTENCE:
@@ -366,7 +370,7 @@ class TTSProcessor(InferenceProcessor):
     * Produces `TTSEvent`
     """
 
-    def tts(self, text, lang="de", speed=150):
+    def tts(self, text, lang="de", speed=160):
         p = subprocess.Popen(['espeak', '--stdout', f'-v{lang}', f'-s {speed}', text], stdout=subprocess.PIPE)
         audio, err = p.communicate()
         audio = np.frombuffer(audio, dtype=np.int16)

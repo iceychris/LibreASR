@@ -162,6 +162,7 @@ class Preprocessor(Module):
             n_mels=n_mels,
             win_length=int(0.025 * sr),
             hop_length=int(0.01 * sr),
+            verbose=False,
         )
         self.specaugment = SpecAugment(**kwargs)
         self.sr = sr

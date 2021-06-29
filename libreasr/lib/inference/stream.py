@@ -119,7 +119,7 @@ def transcribe_stream(
 
 
 def path_to_audio_generator(
-    path: str, secs=DEFAULT_STREAM_CHUNK_SZ, to_sr=16000, start_frames=1, end_frames=2
+    path: str, secs=DEFAULT_STREAM_CHUNK_SZ, to_sr=16000, start_frames=1, end_frames=4
 ):
     """
     Load audio from a path `path` via torchaudio,

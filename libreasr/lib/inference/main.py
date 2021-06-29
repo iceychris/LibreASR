@@ -1,4 +1,5 @@
 from libreasr.lib.inference.imports import *
+from libreasr.lib.defaults import TORCH_NUM_CPU_THREADS
 
 # we need
 # - config
@@ -14,7 +15,7 @@ from libreasr.lib.inference.imports import *
 def load_stuff(lang, config_path=None, **kwargs):
 
     # use more threads for PyTorch
-    torch.set_num_threads(2)
+    torch.set_num_threads(TORCH_NUM_CPU_THREADS)
 
     # grab stuff
     conf, lang, m, tfms = parse_and_apply_config(

@@ -77,15 +77,7 @@ def serve(lang, config_path=None):
     # load model
     from libreasr import LibreASR
 
-    def hook(conf):
-        conf["model"]["loss"] = False
-        conf["cuda"]["enable"] = False
-        conf["cuda"]["device"] = "cpu"
-        conf["model"]["load"] = True
-        conf["model"]["path"] = {"n": "./models/de-4096.pth"}
-
-    libreasr = LibreASR(lang, config_path=config_path, config_hook=hook)
-    libreasr.load_inference()
+    libreasr = LibreASR.auto(lang)
 
     # bring up server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=WORKERS))

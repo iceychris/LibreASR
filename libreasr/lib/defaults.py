@@ -29,10 +29,13 @@ DEFAULT_STREAM_OPTS = {
     "buffer_n_frames": DEFAULT_STREAM_BUFFER_N_FRAMES,
     "sr": 16000,
     "chunk_sz": DEFAULT_STREAM_CHUNK_SZ,
-    "assistant": True,
+    "assistant": False,
     "assistant_keywords": ["computer"],
-    "debug": True,
+    "debug": False,
 }
+
+# PyTorch
+TORCH_NUM_CPU_THREADS = 4
 
 # example audio
 WAVS = [
@@ -61,11 +64,14 @@ AUDIOS = list(zip(WAVS, LABELS))
 # alias languages
 #  to releases with
 #  pretrained models
-ALIASES = {"de": "de-1.1.0"}
+ALIASES = {
+    "de": "libreasr/de-1.1.0",
+    "en": "libreasr/en-1.1.0",
+}
 
 # ${lang}-${release}
 DOWNLOADS = {
-    "de-1.1.0": {
+    "libreasr/de-1.1.0": {
         "config.yaml": {
             "storage": "gdrive",
             "id": "1VhC8oBcMgh-yP9PvMbteVIDGous-aVy_",
@@ -81,6 +87,7 @@ DOWNLOADS = {
             "storage": "gdrive",
             "id": "19LrGnj8DLbCw5BlabfuTUPmXYc0jzSdD",
             "sha256": "460a20f0c97302d86d0b1ffa01b952279dba3e409e71a564a69400e37cac0a6f",
+            "wandb": "20cirnro",
         },
         "lm.pth": {
             "storage": "gdrive",
@@ -88,4 +95,150 @@ DOWNLOADS = {
             "sha256": "e010207c6ec871dc310c27432188e38a6ac983837903e96b6c974d956d1acf49",
         },
     },
+    "libreasr/en-1.1.0": {
+        "config.yaml": {
+            "storage": "gdrive",
+            "id": "1pOQOgKjlv70PIN-gTSk50GBrN89sS5V1",
+            "sha256": "b351afde976381a96d2a346b7b0ba94b097129f7b845ddea480a26941bb59cc5",
+        },
+        "tokenizer.yttm-model": {
+            "storage": "gdrive",
+            "id": "1Njjp75rjfS341oKhw9Ale0HA4z8E9otR",
+            "sha256": "f11dcff85225eaf4ef5c590ba7169f491fc31cde024989d8be36f8b3af1aca1e",
+        },
+        "model.pth": {
+            "storage": "gdrive",
+            "id": "1RPrKkdoOLS55Sa_dWtT87FGRGHms6Lha",
+            "sha256": "0ba28243783453f5039edb95862b9ee023b5b08a9ae473d5426340dc85bbe2a4",
+            "wandb": "3eaqlb1s",
+        },
+    }
 }
+
+# aliases for model sources
+SOURCES = {
+    "lasr": "LibreASR",
+    "hf": "Hugging Face",
+    "sb": "Speech Brain",
+}
+SOURCE_TO_MODULE = {
+    "lasr": "LibreASRInstance",
+    "hf": "HuggingFaceInstance",
+    "sb": "SpeechBrainInstance",
+}
+
+
+# pretrained models
+#  from LibreASR
+LASR_MODELS = {
+    "de": {
+        "id": "libreasr/de-1.1.0",
+        "tested-on": "common-voice-de-test",
+        "wer": -1.0,
+        "stream": True,
+    },
+    "en": {
+        "id": "libreasr/en-1.1.0",
+        "tested-on": "common-voice-en-valid",
+        "wer": 36.6,
+        "stream": True,
+    },
+}
+LASR_LANG_TO_MODEL = {k: v["id"] for k, v in LASR_MODELS.items()}
+
+# pretrained models
+#  from huggingface
+HF_MODELS = {
+    "en": {
+        "id": "facebook/wav2vec2-large-960h-lv60-self",
+        "tested-on": "librispeech-other",
+        "wer": 3.9,
+        "stream": False,
+    },
+    "de": {
+        "id": "facebook/wav2vec2-large-xlsr-53-german",
+        "tested-on": "common-voice-de-test",
+        "wer": 18.5,
+        "stream": False,
+    },
+    "fr": {
+        "id": "facebook/wav2vec2-large-xlsr-53-french",
+        "tested-on": "common-voice-fr-test",
+        "wer": 25.2,
+        "stream": False,
+    },
+    "es": {
+        "id": "facebook/wav2vec2-large-xlsr-53-spanish",
+        "tested-on": "common-voice-es-test",
+        "wer": 17.6,
+        "stream": False,
+    },
+    "it": {
+        "id": "facebook/wav2vec2-large-xlsr-53-italian",
+        "tested-on": "common-voice-it-test",
+        "wer": 22.1,
+        "stream": False,
+    },
+}
+HF_LANG_TO_MODEL = {k: v["id"] for k, v in HF_MODELS.items()}
+
+# pretrained models
+#  from Speech Brain
+SB_MODELS = {}
+SB_LANG_TO_MODEL = {k: v["id"] for k, v in SB_MODELS.items()}
+
+# all usable models
+#  within LibreASR
+#  {
+#    "source": {
+#      "lang-code": {
+#        "id": "model-id",
+#        "tested-on": "common-voice"
+#        "wer": 14.5,
+#        "stream": False,
+#      }
+#    }
+#  }
+MODELS = {
+    "lasr": LASR_MODELS,
+    "hf": HF_MODELS,
+    "sb": SB_MODELS,
+}
+
+# all available language
+#  codes
+LANGUAGES = set([
+    *list(LASR_MODELS.keys()),
+    *list(HF_MODELS.keys()),
+    *list(SB_MODELS.keys()),
+])
+
+# all available model ids
+MODEL_IDS = set([
+    *[x["id"] for x in LASR_MODELS.values()],
+    *[x["id"] for x in HF_MODELS.values()],
+    *[x["id"] for x in SB_MODELS.values()],
+])
+
+# lang-code -> model_id
+LANG_TO_MODEL_ID = {**SB_LANG_TO_MODEL}
+LANG_TO_MODEL_ID.update(HF_LANG_TO_MODEL)
+LANG_TO_MODEL_ID.update(LASR_LANG_TO_MODEL)
+
+# map each model id
+#  to its source
+def model_id_to_module(model_id):
+    assert model_id in MODEL_IDS
+    for s in SOURCES.keys():
+        for l in MODELS[s].keys():
+            _id = MODELS[s][l]["id"]
+            if _id == model_id:
+                return SOURCE_TO_MODULE[s]
+
+# TODO:
+# - autoselect model if
+#   LibreASR("fr") used
+#   - use LibreASR model if available
+#   - use hf if not
+# - from_sb, from_speechbrain, from_hf, from_libreasr, from_lasr
+# - refactor instance logic

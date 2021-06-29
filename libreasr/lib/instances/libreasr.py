@@ -2,15 +2,27 @@ import collections
 import inspect
 import types
 import queue
+import pathlib
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from libreasr.lib.defaults import DEFAULT_SR, DEFAULT_BATCH_SIZE
+from libreasr.lib.inference.events import EventTag
+from libreasr.lib.instances import BaseInstance
 
 
-class LibreASRInstance:
+class LibreASRInstance(BaseInstance):
+    def __init__(self, lang, config_path=None, **kwargs):
+        super().__init__()
+        self.config_path = config_path
+        from libreasr.lib.inference.main import load_stuff
+
+        self.conf, self.lang, self.model, self.x_tfm, self.x_tfm_stream = load_stuff(
+            lang, config_path=config_path, **kwargs
+        )
+
     def transcribe(self, sth, batch=True, **kwargs):
         # update with tuned values if available
         kwargs.update(self.conf.get("hypers", {}).get("tuned", {}))
@@ -46,15 +58,15 @@ class LibreASRInstance:
                 sth,
                 (
                     types.GeneratorType,
+                    str,
                     list,
                     tuple,
                     map,
                     filter,
                     collections.abc.Iterator,
+                    pathlib.Path,
                 ),
             )
-            or isinstance(sth, str)
-            or isinstance(sth, list)
         ):
             return self._transcribe_stream_generator(sth, **kwargs)
         elif isinstance(sth, queue.Queue):
@@ -94,12 +106,15 @@ class LibreASRInstance:
                 sth, self.model, self.x_tfm_stream, self.lang, **kwargs
             )
 
-        def get_result(stream_output):
+        def get_result(stream_output) -> str:
             # grab last output
-            return list(stream_output)[-1].transcript
+            l = list(stream_output)
+            filtered = list(filter(lambda x: x.tag == EventTag.SENTENCE, l))
+            last = filtered[-1]
+            return last.transcript
 
         transcripts = None
-        if isinstance(sth, str):
+        if isinstance(sth, (str, pathlib.Path)):
             # turn into generator
             sth = path_to_audio_generator(sth)
             transcripts = get_result(stream(sth))

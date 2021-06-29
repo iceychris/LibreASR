@@ -1,14 +1,25 @@
 """
 LibreASR source code
 """
+from importlib import import_module
 import gc
 import math
 
 import numpy as np
 
-from libreasr.lib.defaults import DEFAULT_CONFIG_PATH
+from libreasr.lib.defaults import DEFAULT_CONFIG_PATH, LANGUAGES, MODEL_IDS, LANG_TO_MODEL_ID, model_id_to_module
 from libreasr.lib.inference.utils import load_config, get_available_models
-from libreasr.lib.instance import LibreASRTraining, LibreASRInference
+from libreasr.lib.instances import *
+
+
+def get_instance(model_name, **kwargs):
+    m = model_name
+    assert m in LANGUAGES or m in MODEL_IDS, f"No such model '{m}'"
+    if m in LANGUAGES:
+        m = LANG_TO_MODEL_ID[m]
+    mod = model_id_to_module(m)
+    instance_cls = getattr(import_module("libreasr.lib.instances"), mod)
+    return instance_cls(m, **kwargs)
 
 
 class LibreASR:
@@ -21,6 +32,35 @@ class LibreASR:
         self.kwargs = kwargs
         self.inst = None
         self.mode = None
+
+    @staticmethod
+    def load(model_name, **kwargs):
+        return get_instance(model_name, **kwargs)
+
+    @staticmethod
+    def auto(LANG="en", MODEL_SUFFIX="-0.366wer"):
+        """
+        Grab a new LibreASR instance
+        """
+        def hook(conf):
+            conf["model"]["loss"] = False
+            conf["cuda"]["enable"] = False
+            conf["cuda"]["device"] = "cpu"
+            conf["model"]["load"] = True
+            conf["model"]["path"] = {"n": f"./models/{LANG}-4096{MODEL_SUFFIX}.pth"}
+            conf["tokenizer"]["model_file"] = f"./tmp/tokenizer-{LANG}-4096.yttm-model"
+
+        libreasr = LibreASR(LANG, config_path="./config/base.yaml", config_hook=hook)
+        libreasr.load_inference()
+        return libreasr
+
+    @staticmethod
+    def from_huggingface(model_name):
+        """
+        Wrap & load a model from Hugging Face.
+        Currently, only wav2vec2 models are supported.
+        """
+        return HuggingFaceInstance(model_name)
 
     def _load_eval(self, pcent):
         def training_hook(conf):
@@ -113,6 +153,7 @@ class LibreASR:
         assert self.mode is not None
         return self.inst.conf.get("grpc_port", 50051)
 
+    @staticmethod
     def available_models(self):
         return get_available_models()
 

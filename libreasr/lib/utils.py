@@ -348,3 +348,11 @@ class TupleGetter:
     @staticmethod
     def bad(tpl):
         raise Exception("not implemented")
+
+
+def warn_about_license(component: str, function: str, link: str):
+    prefix = "[warning]"
+    print(prefix, "*" * 64)
+    print(prefix, f"Using {function} in {component}...")
+    print(prefix, f"Check its license: {link}")
+    print(prefix, "*" * 64)
