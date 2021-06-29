@@ -171,8 +171,7 @@ def reducer(report_loss_dict_fn, loss_dict, *args, reduction="mean", **kwargs):
     #  and bail
     for k, loss in loss_dict.items():
         if torch.isnan(loss).any():
-            warn(f"Found NaN values in loss_dict key {k}")
-            warn("Returing mock loss value")
+            warn(f"Found NaN values in loss_dict (key {k}), mocking loss...")
             loss = torch.Tensor([0.0])
             loss.requires_grad_(True)
             loss_dict[k] = loss

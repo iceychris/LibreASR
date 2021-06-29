@@ -320,7 +320,7 @@ def start_rnnt_beam_search(
             return cache[key][0]
 
         # backtrack until known
-        remaining = tuple()
+        remaining = pred_tokens
         state = list(predictor_state)
         for i in range(len(pred_tokens)):
             toks = pred_tokens[:i]
@@ -330,7 +330,8 @@ def start_rnnt_beam_search(
 
         # otherwise compute & insert
         t = torch.LongTensor([list(remaining)]).to(device)
-        output, state = predictor(t, state=state)
+        with torch.no_grad():
+            output, state = predictor(t, state=state)
 
         # only keep last
         output = output[:, -1:]
@@ -342,7 +343,8 @@ def start_rnnt_beam_search(
         if key in cache:
             return cache[key], False
         try:
-            rj = joint(*inp)
+            with torch.no_grad():
+                rj = joint(*inp)
         except:
             from IPython.core.debugger import set_trace; set_trace()
         cache[key] = rj

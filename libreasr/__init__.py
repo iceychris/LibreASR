@@ -27,6 +27,8 @@ class LibreASR:
             conf["cuda"]["enable"] = False
             conf["pcent"]["valid"] = pcent
             conf["apply_limits"] = False
+            conf["apply_x_limits"] = False
+            conf["apply_y_limits"] = False
             conf["suffix"] = ""
             conf["model"]["load"] = False
             conf["lm"]["enable"] = False
