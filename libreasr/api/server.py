@@ -12,6 +12,7 @@ import grpc
 import libreasr.api.interfaces.libreasr_pb2 as ap
 import libreasr.api.interfaces.libreasr_pb2_grpc as apg
 from libreasr.lib.inference.imports import *
+from libreasr.lib.inference.events import *
 from libreasr.lib.inference.main import load_stuff
 from libreasr.lib.inference.utils import load_config
 from libreasr.lib.defaults import ALIASES
@@ -58,8 +59,16 @@ class LibreASRServicer(apg.LibreASRServicer):
         )
 
         # inference
-        for transcript in self.l.stream(iter(unpeeked), sr=sr):
-            yield ap.Transcript(data=transcript)
+        kwargs = {
+            "sr": sr,
+            "stream_opts": {
+                "assistant": True
+            }
+        }
+        for event in self.l.stream(iter(unpeeked), **kwargs):
+            # convert to protobuf
+            #  and reply in a streaming fashion
+            yield event.to_protobuf()
         log_print(f"... done.")
 
 

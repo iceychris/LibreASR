@@ -29,6 +29,9 @@ DEFAULT_STREAM_OPTS = {
     "buffer_n_frames": DEFAULT_STREAM_BUFFER_N_FRAMES,
     "sr": 16000,
     "chunk_sz": DEFAULT_STREAM_CHUNK_SZ,
+    "assistant": True,
+    "assistant_keywords": ["computer"],
+    "debug": True,
 }
 
 # example audio

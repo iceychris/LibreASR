@@ -19,8 +19,8 @@ window.socket = null;
 window.audioData = Float32Array.of();
 export function transcribe(data, lang, sr, cb) {
     window.socket.onmessage = function (evt) {
-        console.log("ws:", evt.data)
-        cb(evt.data)
+        console.log("websocket response:", evt.data)
+        cb(JSON.parse(evt.data))
     };
     window.audioData = concatenate(Float32Array, window.audioData, data);
     const sendables = grabStreamableAudioData(sr);
@@ -36,7 +36,7 @@ export function transcribe(data, lang, sr, cb) {
 
     for (let i = 0; i < sendables.length; i++) {
         const one = sendables[i];
-        console.log(`[${i}] ws sending ${one.length / sr} secs`);
+        // console.log(`[${i}] ws sending ${one.length / sr} secs`);
         const info = concatenate(Float32Array, Float32Array.of(lang), Float32Array.of(sr))
         const blob = concatenate(Float32Array, info, one);
         window.socket.send(blob);
@@ -50,7 +50,7 @@ function grabStreamableAudioData(sr) {
     // grab adequatly many
     while (samples >= minSamples) {
         const one = window.audioData.slice(0, minSamples);
-        console.log("samples:", one.length);
+        // console.log("samples:", one.length);
         sendables.push(one);
         window.audioData = window.audioData.slice(minSamples);
         samples = samples - minSamples;

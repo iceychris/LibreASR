@@ -274,7 +274,7 @@ class MySignalShifter(Transform):
 class PadderCutter(Transform):
     order = 10
 
-    def __init__(self, audio_len_min_sec=1.0, audio_len_max_sec=7.0, **kwargs):
+    def __init__(self, audio_len_min_sec=1.0, audio_len_max_sec=None, **kwargs):
         self.al_min = audio_len_min_sec
         self.al_max = audio_len_max_sec
 
@@ -289,7 +289,7 @@ class PadderCutter(Transform):
                 [sig, torch.zeros(sig.size(0), int(sr * min_sec) - sig.size(1))], -1
             )
         # cut | not too long
-        if sig.size(1) / sr >= max_sec:
+        if max_sec is not None and sig.size(1) / sr >= max_sec:
             sig = sig[:, : int(sr * max_sec)]
         return sig
 

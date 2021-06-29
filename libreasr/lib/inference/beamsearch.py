@@ -17,6 +17,10 @@ from libreasr.lib.memo import mk_memo
 #  alpha parameter.
 #  See https://www.youtube.com/watch?v=ZGUZwk7xIwk
 BEAM_SEARCH_SCORE_ALPHA = 1.0  # 0.0
+
+# multiplicative factor for merging
+#  when multiple hypotheses
+#  with the same transcript emerge
 BEAM_SEARCH_INITIAL_MULTIPLIER = 1.0
 
 
@@ -48,7 +52,7 @@ def BeamStateBuilder(predictor_fn, score_cache_sz):
             # probs are expected to be elem [0.0, 1.0[
             tokens, probs = self.tokens, self.probs
             alpha = BEAM_SEARCH_SCORE_ALPHA
-            probs = np.array([*probs, self.multiplier])
+            probs = np.array(probs + [self.multiplier])
             factor = 1 / len(tokens) ** alpha
             score = factor * np.sum(np.log(probs))
             return score
@@ -157,15 +161,18 @@ class Beamer(nn.Module):
         super().__init__()
         self.initial = initial
         self.joint_fn = joint_fn
-        self.beam = [initial]
         self.beam_width = beam_width
         self.topk_next = topk_next
         self.blank_token_idx = blank_token_idx
         self.max_iters = max_iters
         self.debug = debug
-        self.t = 0
+        self.reset()
         if debug:
             print(f"[beamsearch] bw={beam_width}, topk={topk_next}, mi={max_iters}")
+
+    def reset(self):
+        self.beam = [self.initial]
+        self.t = 0
 
     def forward(self, enc):
         bw = self.beam_width
@@ -190,7 +197,7 @@ class Beamer(nn.Module):
 
             # option 2
             #  naively increase the multiplier
-            s = g[0]  # max(g)
+            s = max(g)
             keep = s.with_multiplier(s.multiplier * len(g))
             candidates.append(keep)
 
@@ -241,8 +248,8 @@ class Beamer(nn.Module):
         # increment frame counter
         self.t += 1
 
-        # return current best
-        return self.best
+        # return all hypotheses
+        return [(x.tokens, x.score) for x in self.all]
 
     @property
     def all(self):

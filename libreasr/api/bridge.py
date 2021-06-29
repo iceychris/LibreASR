@@ -15,6 +15,7 @@ import grpc
 import tornado.web
 import tornado.websocket
 from tornado.ioloop import PeriodicCallback
+from google.protobuf import json_format
 
 import libreasr.api.interfaces.libreasr_pb2 as ap
 import libreasr.api.interfaces.libreasr_pb2_grpc as apg
@@ -56,9 +57,9 @@ def grpc_thread_func(conf, lang, q_recv, q_send):
                     return
 
         # inference
-        for transcript in stub.TranscribeStream(yielder()):
-            log_print("Transcript:", transcript.data)
-            q_send.put(transcript)
+        for event in stub.TranscribeStream(yielder()):
+            log_print(event)
+            q_send.put(event)
         log_print("gRPC stopped")
 
 
@@ -141,12 +142,15 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         q_recv.put_nowait(ap.Audio(data=data, sr=sr))
 
         # check results
-        try:
-            while q_send.qsize() > 0:
-                res = q_send.get_nowait()
-                self.write_message(res.data)
-        except:
-            pass
+        while q_send.qsize() > 0:
+            res = q_send.get_nowait()
+
+            # convert to json
+            obj = json_format.MessageToDict(res)
+            s = json.dumps(obj)
+
+            # reply
+            self.write_message(s)
 
 
 if __name__ == "__main__":
