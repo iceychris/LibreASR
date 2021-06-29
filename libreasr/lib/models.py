@@ -413,6 +413,7 @@ class RNNTLoss(Module):
     RNN-T loss function
     with auxiliary CTC loss
     """
+
     def __init__(self, aux_ctc=False, reduction=1.0, zero_nan=False):
         from warp_rnnt import rnnt_loss
 
@@ -453,7 +454,7 @@ class RNNTLoss(Module):
             yl = yl.type(torch.long)
             ctc_loss_value = self.ctc_loss(ctc_out, y, xl, yl)
             losses["ctc_loss"] = ctc_loss_value
-            losses["loss"] = (rnnt_loss_value + ctc_loss_value) / 2.
+            losses["loss"] = (rnnt_loss_value + ctc_loss_value) / 2.0
         return losses
 
 
@@ -543,7 +544,9 @@ class Transducer(Module):
         self.lm = None
         self.learnable_stft = learnable_stft
         if auxiliary_ctc_loss:
-            self.ctc_head = nn.LSTM(out_sz_enc, vocab_sz, num_layers=1, batch_first=True)
+            self.ctc_head = nn.LSTM(
+                out_sz_enc, vocab_sz, num_layers=1, batch_first=True
+            )
         self.aux_ctc = auxiliary_ctc_loss
         self.loss = RNNTLoss(aux_ctc=auxiliary_ctc_loss) if loss else None
         self.ctx = Benchmark if benchmark else contextlib.suppress
@@ -1080,8 +1083,16 @@ class SemiSupervisedTransducer(Transducer):
                 [nn.Linear(a, b, bias=False) for _ in range(modalities)]
             )
         if mode == "wav2vec2_contrastive":
-            from transformers import AutoTokenizer, AutoModel, Wav2Vec2FeatureExtractor, Wav2Vec2Processor
-            name, cut_at = "facebook/wav2vec2-large-xlsr-53", kwargs.pop("wav2vec2_cut", 15)
+            from transformers import (
+                AutoTokenizer,
+                AutoModel,
+                Wav2Vec2FeatureExtractor,
+                Wav2Vec2Processor,
+            )
+
+            name, cut_at = "facebook/wav2vec2-large-xlsr-53", kwargs.pop(
+                "wav2vec2_cut", 15
+            )
             model = AutoModel.from_pretrained(name)
             model.encoder.layers = model.encoder.layers[:cut_at]
             model = model.eval().cuda()
@@ -1283,15 +1294,14 @@ class SemiSupervisedTransducer(Transducer):
             )
 
             # assemble
-            inp = {
-                "input_values": x[:, :, 0, 0],
-                "attention_mask": attn_mask
-            }
+            inp = {"input_values": x[:, :, 0, 0], "attention_mask": attn_mask}
 
             # extract
             with torch.no_grad():
                 r2 = self.wav2vec2[0](**inp).last_hidden_state
-            r2mask = torch.arange(r2.size(1), dtype=xl.dtype, device=xl.device)[None, :] > -1
+            r2mask = (
+                torch.arange(r2.size(1), dtype=xl.dtype, device=xl.device)[None, :] > -1
+            )
         else:
             # predictor
             # concat first bos (yconcat is y shifted right by 1)
@@ -1340,9 +1350,7 @@ class SemiSupervisedTransducer(Transducer):
         # calculate losses
         l1 = F.cross_entropy(sim, labels)
         l2 = F.cross_entropy(sim.T, labels)
-        return {
-            "loss": (l1 + l2) / 2.0
-        }
+        return {"loss": (l1 + l2) / 2.0}
 
     def forward(self, tpl, return_logits=False):
         """

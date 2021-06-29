@@ -1,5 +1,6 @@
 from abc import ABC
 
+
 class BaseInstance(ABC):
     def transcribe(self, sth, batch=True, **kwargs):
         raise NotImplementedError()

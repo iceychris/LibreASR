@@ -84,9 +84,8 @@ class ASRDatabunchBuilder:
         if conf["apply_x_limits"]:
             builder = builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
         if conf["apply_y_limits"]:
-            builder = (
-                builder.y_bounds(conf["y_min"], conf["y_max"])
-                .set_max_words(conf["y_max_words"])
+            builder = builder.y_bounds(conf["y_min"], conf["y_max"]).set_max_words(
+                conf["y_max_words"]
             )
         if conf["shuffle_builder"][mode]:
             builder.shuffle()
@@ -288,7 +287,8 @@ class ASRDatabunchBuilder:
                 plt.show()
                 if save:
                     plt.savefig("./plots/figures/data-x-y.png", dpi=300)
-            except: pass
+            except:
+                pass
         return self
 
 

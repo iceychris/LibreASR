@@ -7,7 +7,13 @@ import math
 
 import numpy as np
 
-from libreasr.lib.defaults import DEFAULT_CONFIG_PATH, LANGUAGES, MODEL_IDS, LANG_TO_MODEL_ID, model_id_to_module
+from libreasr.lib.defaults import (
+    DEFAULT_CONFIG_PATH,
+    LANGUAGES,
+    MODEL_IDS,
+    LANG_TO_MODEL_ID,
+    model_id_to_module,
+)
 from libreasr.lib.inference.utils import load_config, get_available_models
 from libreasr.lib.instances import *
 
@@ -23,6 +29,32 @@ def get_instance(model_name, **kwargs):
 
 
 class LibreASR:
+    def __new__(cls, model_name=None, auto=False, wrap=False, **kwargs):
+        if auto:
+            return LibreASRWrapper.auto(**kwargs)
+        assert model_name is not None, "Model name or language code required"
+        if wrap:
+            return LibreASRWrapper(model_name, **kwargs)
+        return get_instance(model_name, **kwargs)
+
+    @staticmethod
+    def from_huggingface(*args, **kwargs):
+        return HuggingFaceInstance(*args, **kwargs)
+
+    @staticmethod
+    def from_hf(*args, **kwargs):
+        return HuggingFaceInstance(*args, **kwargs)
+
+    @staticmethod
+    def from_speechbrain(*args, **kwargs):
+        return LibreASR(*args, **kwargs)
+
+    @staticmethod
+    def from_sb(*args, **kwargs):
+        return LibreASR(*args, **kwargs)
+
+
+class LibreASRWrapper:
     def __init__(self, lang=None, config_path=None, **kwargs):
         """
         Create a new LibreASR instace for a specific language
@@ -34,14 +66,13 @@ class LibreASR:
         self.mode = None
 
     @staticmethod
-    def load(model_name, **kwargs):
-        return get_instance(model_name, **kwargs)
+    # def auto(LANG="en", MODEL_SUFFIX="-0.366wer"):
+    def auto(LANG="de", MODEL_SUFFIX=""):
+        """
+        Quickly grab a new LibreASR instance.
+        Useful for development.
+        """
 
-    @staticmethod
-    def auto(LANG="en", MODEL_SUFFIX="-0.366wer"):
-        """
-        Grab a new LibreASR instance
-        """
         def hook(conf):
             conf["model"]["loss"] = False
             conf["cuda"]["enable"] = False
@@ -50,17 +81,11 @@ class LibreASR:
             conf["model"]["path"] = {"n": f"./models/{LANG}-4096{MODEL_SUFFIX}.pth"}
             conf["tokenizer"]["model_file"] = f"./tmp/tokenizer-{LANG}-4096.yttm-model"
 
-        libreasr = LibreASR(LANG, config_path="./config/base.yaml", config_hook=hook)
+        libreasr = LibreASR(
+            LANG, wrap=True, config_path="./config/base.yaml", config_hook=hook
+        )
         libreasr.load_inference()
         return libreasr
-
-    @staticmethod
-    def from_huggingface(model_name):
-        """
-        Wrap & load a model from Hugging Face.
-        Currently, only wav2vec2 models are supported.
-        """
-        return HuggingFaceInstance(model_name)
 
     def _load_eval(self, pcent):
         def training_hook(conf):
@@ -74,9 +99,12 @@ class LibreASR:
             conf["lm"]["enable"] = False
 
         lt = LibreASR(
-            lang=None, config_path=self.config_path, config_hook=training_hook
+            wrap=True,
+            lang=None,
+            config_path=self.config_path,
+            config_hook=training_hook,
         ).load_training()
-        li = LibreASR(lang=self.lang, config_path=None).load_inference()
+        li = LibreASR(wrap=True, lang=self.lang, config_path=None).load_inference()
         return lt, li
 
     def _collect_garbage(self, ok, new_mode):

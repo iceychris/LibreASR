@@ -59,12 +59,7 @@ class LibreASRServicer(apg.LibreASRServicer):
         )
 
         # inference
-        kwargs = {
-            "sr": sr,
-            "stream_opts": {
-                "assistant": True
-            }
-        }
+        kwargs = {"sr": sr, "stream_opts": {"assistant": True}}
         for event in self.l.stream(iter(unpeeked), **kwargs):
             # convert to protobuf
             #  and reply in a streaming fashion

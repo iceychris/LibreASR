@@ -311,7 +311,7 @@ def start_rnnt_beam_search(
     joint_cache_sz = bsopts.get("joint_cache_sz")
     score_cache_sz = bsopts.get("score_cache_sz")
     debug = bsopts.get("debug")
-    
+
     # extra vars
     device = predictor_output.device
 
@@ -353,7 +353,9 @@ def start_rnnt_beam_search(
             with torch.no_grad():
                 rj = joint(*inp)
         except:
-            from IPython.core.debugger import set_trace; set_trace()
+            from IPython.core.debugger import set_trace
+
+            set_trace()
         cache[key] = rj
         return rj, True
 

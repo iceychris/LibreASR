@@ -17,7 +17,7 @@ from IPython.core.debugger import set_trace
 def eval_speech_model(
     self: Learner,
     pcent=1.0,
-    min_samples=200, # 800,
+    min_samples=200,  # 800,
     device=None,
     train=False,
     ddp=False,

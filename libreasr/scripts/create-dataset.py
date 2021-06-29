@@ -62,7 +62,7 @@ def process_one(f, get_labels, allow_no_label=False):
             rows.append((str(f.absolute()), xstart, spanlen, label, ylen, sr, bad))
         # add anyways
         if len(labels) == 0 and allow_no_label:
-            xstart, label, ylen, bad = 0, "", 0, False 
+            xstart, label, ylen, bad = 0, "", 0, False
             rows.append((str(f.absolute()), xstart, xlen, label, ylen, sr, bad))
     except Exception as e:
         pass
@@ -425,15 +425,49 @@ if __name__ == "__main__":
                                     text += sanitize_str(txt)
             return transcripts
 
-    # spawn a pool
-    p = multiprocessing.Pool(args.workers)
+    elif dataset in ("auto", "transcribe", "transcription"):
+
+        # load LibreASR instance
+        assert args.workers == 0, "Multiple workers not implemented"
+        from libreasr import LibreASR
+
+        l = LibreASR(LANG=args.lang, auto=True)
+        opts = {
+            "max_iters": 5,
+            "beam_search_opts": {
+                "beam_width": 8,
+                "topk_next": 2,
+            },
+        }
+
+        # use instance to transcribe here
+        def get_labels(file, duration):
+            transcript = l.stream(file, **opts)
+            transcript = sanitize_str(transcript)
+            # print(file, "|", transcript)
+            return [(0, -1, transcript, len(transcript))]
+
     bads = 0
     unknown = 1
     with tqdm.tqdm(total=len(files)) as t:
-        func = partial(process_one, get_labels=get_labels, allow_no_label=allow_no_label)
-        for i, tpls in enumerate(
-            p.imap_unordered(func, files, 1024)
-        ):
+
+        def executor(function):
+            # local thread
+            if args.workers == 0:
+                for f in files:
+                    yield function(f)
+
+            # multiple processes
+            else:
+                # spawn a pool
+                p = multiprocessing.Pool(args.workers)
+                return p.imap_unordered(function, files, 1024)
+
+        # execute
+        func = partial(
+            process_one, get_labels=get_labels, allow_no_label=allow_no_label
+        )
+        for i, tpls in enumerate(executor(func)):
 
             # iterate through labels
             data = None
@@ -451,10 +485,8 @@ if __name__ == "__main__":
                 if data:
                     t.write("> data: " + str(tpl))
                 t.write(f"> df len: {len(df)}")
-                pcent_bad = int((bads / unknown) * 100.)
-                t.write(
-                    "> pcent bad: " + f"{pcent_bad}% ({bads} rows)"
-                )
+                pcent_bad = int((bads / unknown) * 100.0)
+                t.write("> pcent bad: " + f"{pcent_bad}% ({bads} rows)")
 
             # insert into df
             df = df.append(

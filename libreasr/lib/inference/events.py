@@ -3,7 +3,6 @@ from enum import Enum
 from typing import List, Callable
 
 
-
 class EventTag(Enum):
     START = 1
     STOP = 2
@@ -73,7 +72,7 @@ class WakewordEvent(InferenceEvent):
     def __init__(self, wakeword):
         super().__init__(EventTag.WAKEWORD)
         self.wakeword = wakeword
-    
+
     def __repr__(self):
         return f"<{self.__class__.__name__} wakeword='{self.wakeword}'>"
 
@@ -82,12 +81,13 @@ class TranscriptEvent(InferenceEvent):
     def __init__(self, transcript):
         super().__init__(EventTag.TRANSCRIPT)
         self.transcript = transcript
-    
+
     def __repr__(self):
         return f"<{self.__class__.__name__} transcript='{self.transcript}'>"
 
     def to_protobuf(self):
         import libreasr.api.interfaces.libreasr_pb2 as ap
+
         return ap.Event(te=ap.TranscriptEvent(transcript=self.transcript))
 
 
@@ -101,6 +101,7 @@ class SentenceEvent(InferenceEvent):
 
     def to_protobuf(self):
         import libreasr.api.interfaces.libreasr_pb2 as ap
+
         return ap.Event(se=ap.SentenceEvent(transcript=self.transcript))
 
 
@@ -108,7 +109,7 @@ class AssistantAnswerEvent(InferenceEvent):
     def __init__(self, answer: str):
         super().__init__(EventTag.ASSISTANT_ANSWER)
         self.answer = answer
-    
+
     def __repr__(self):
         return f"<{self.__class__.__name__} answer='{self.answer}'>"
 
@@ -117,7 +118,7 @@ class TTSEvent(InferenceEvent):
     def __init__(self, audio):
         super().__init__(EventTag.TTS)
         self.audio = audio
-    
+
     def __repr__(self):
         return f"<{self.__class__.__name__} audio=({len(self.audio)})>"
 

@@ -12,13 +12,13 @@ LM_DEBUG = False
 MODEL_TEMP = 1.0
 
 # beam search
-DEFAULT_MAX_ITERS = 3 # 5
+DEFAULT_MAX_ITERS = 3  # 5
 DEFAULT_BEAM_SEARCH_OPTS = {
     "beam_width": 1,
     "topk_next": 1,
-    "predictor_cache_sz": 4, # 128, # 1024,
-    "joint_cache_sz": 4, # 128, # 1024,
-    "score_cache_sz": 4, # 128, # 1024,
+    "predictor_cache_sz": 4,  # 128, # 1024,
+    "joint_cache_sz": 4,  # 128, # 1024,
+    "score_cache_sz": 4,  # 128, # 1024,
     "debug": False,
 }
 
@@ -112,7 +112,7 @@ DOWNLOADS = {
             "sha256": "0ba28243783453f5039edb95862b9ee023b5b08a9ae473d5426340dc85bbe2a4",
             "wandb": "3eaqlb1s",
         },
-    }
+    },
 }
 
 # aliases for model sources
@@ -207,18 +207,22 @@ MODELS = {
 
 # all available language
 #  codes
-LANGUAGES = set([
-    *list(LASR_MODELS.keys()),
-    *list(HF_MODELS.keys()),
-    *list(SB_MODELS.keys()),
-])
+LANGUAGES = set(
+    [
+        *list(LASR_MODELS.keys()),
+        *list(HF_MODELS.keys()),
+        *list(SB_MODELS.keys()),
+    ]
+)
 
 # all available model ids
-MODEL_IDS = set([
-    *[x["id"] for x in LASR_MODELS.values()],
-    *[x["id"] for x in HF_MODELS.values()],
-    *[x["id"] for x in SB_MODELS.values()],
-])
+MODEL_IDS = set(
+    [
+        *[x["id"] for x in LASR_MODELS.values()],
+        *[x["id"] for x in HF_MODELS.values()],
+        *[x["id"] for x in SB_MODELS.values()],
+    ]
+)
 
 # lang-code -> model_id
 LANG_TO_MODEL_ID = {**SB_LANG_TO_MODEL}
@@ -234,11 +238,3 @@ def model_id_to_module(model_id):
             _id = MODELS[s][l]["id"]
             if _id == model_id:
                 return SOURCE_TO_MODULE[s]
-
-# TODO:
-# - autoselect model if
-#   LibreASR("fr") used
-#   - use LibreASR model if available
-#   - use hf if not
-# - from_sb, from_speechbrain, from_hf, from_libreasr, from_lasr
-# - refactor instance logic

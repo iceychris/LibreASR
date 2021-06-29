@@ -53,20 +53,18 @@ class LibreASRInstance(BaseInstance):
         # go!
         if inspect.isgeneratorfunction(sth):
             sth = sth()
-        if (
-            isinstance(
-                sth,
-                (
-                    types.GeneratorType,
-                    str,
-                    list,
-                    tuple,
-                    map,
-                    filter,
-                    collections.abc.Iterator,
-                    pathlib.Path,
-                ),
-            )
+        if isinstance(
+            sth,
+            (
+                types.GeneratorType,
+                str,
+                list,
+                tuple,
+                map,
+                filter,
+                collections.abc.Iterator,
+                pathlib.Path,
+            ),
         ):
             return self._transcribe_stream_generator(sth, **kwargs)
         elif isinstance(sth, queue.Queue):
@@ -99,7 +97,10 @@ class LibreASRInstance(BaseInstance):
         return _infer(self.model, batches, lens, batched=True, **kwargs)
 
     def _transcribe_stream_generator(self, sth, **kwargs):
-        from libreasr.lib.inference.stream import transcribe_stream, path_to_audio_generator
+        from libreasr.lib.inference.stream import (
+            transcribe_stream,
+            path_to_audio_generator,
+        )
 
         def stream(sth):
             return transcribe_stream(
@@ -162,7 +163,6 @@ class LibreASRTraining(LibreASRInstance):
 
 class LibreASRInference(LibreASRInstance):
     def __init__(self, lang, config_path, **kwargs):
-        super().__init__()
         self.config_path = config_path
         from libreasr.lib.inference.main import load_stuff
 

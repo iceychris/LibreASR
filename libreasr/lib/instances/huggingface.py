@@ -10,7 +10,7 @@ from libreasr.lib.instances import BaseInstance
 
 
 class HuggingFaceInstance(BaseInstance):
-    def __init__(self, model_name): 
+    def __init__(self, model_name):
         from transformers import Wav2Vec2Tokenizer, Wav2Vec2ForCTC
 
         # resolve model name
@@ -21,7 +21,7 @@ class HuggingFaceInstance(BaseInstance):
         warn_about_license(
             "HuggingFaceInstance",
             "external speech recognition model",
-            f"https://huggingface.co/{model_name}"
+            f"https://huggingface.co/{model_name}",
         )
 
         # load model and tokenizer
@@ -46,7 +46,9 @@ class HuggingFaceInstance(BaseInstance):
             speech.append(audio)
 
         # prepare for model
-        inp = self.tokenizer(speech, return_tensors="pt", padding="longest").input_values
+        inp = self.tokenizer(
+            speech, return_tensors="pt", padding="longest"
+        ).input_values
 
         # retrieve logits
         logits = self.model(inp).logits

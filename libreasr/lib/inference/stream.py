@@ -31,7 +31,11 @@ def transcribe_stream(
     ###
 
     stream_opts = update(DEFAULT_STREAM_OPTS, stream_opts)
-    assis, assis_kw, dbg_proc = stream_opts["assistant"], stream_opts["assistant_keywords"], stream_opts["debug"]
+    assis, assis_kw, dbg_proc = (
+        stream_opts["assistant"],
+        stream_opts["assistant_keywords"],
+        stream_opts["debug"],
+    )
     if assis:
         processors = [
             VADProcessor(sr=sr, debug=False),
@@ -51,11 +55,10 @@ def transcribe_stream(
     if dbg_proc:
         processors.append(EventDebugProcessor())
 
-
     ###
     # input processing
     ###
-    
+
     # tensorize
     gen = map(tensorize, gen)
 
@@ -67,7 +70,8 @@ def transcribe_stream(
             if len(frames) == n_frames:
                 catted = torch.cat(frames, dim=1)
                 frames.clear()
-                yield catted 
+                yield catted
+
     gen = buffer(gen)
 
     # convert to AudioTensor
@@ -82,6 +86,7 @@ def transcribe_stream(
         for segments in gen:
             for seg in segments:
                 yield seg
+
     procs = MultiInferenceProcessor(processors, flatten_fn=flatten)
     gen = procs(gen)
 
@@ -89,7 +94,9 @@ def transcribe_stream(
     def add_dims(segment):
         if torch.is_tensor(segment):
             return segment[:, :, None, None]
-        else: return segment
+        else:
+            return segment
+
     gen = map(add_dims, gen)
 
     ###

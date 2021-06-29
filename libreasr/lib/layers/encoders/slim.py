@@ -93,9 +93,11 @@ class SlimEncoder(nn.Module):
         lstm = partial(nn.LSTM, dim, dim, batch_first=True, num_layers=1)
         layers = []
         for ind in range(num_layers):
-            layers.extend([
-                LayerScale(dim, ind + 1, PreNorm(dim, First(lstm()))),
-            ])
+            layers.extend(
+                [
+                    LayerScale(dim, ind + 1, PreNorm(dim, First(lstm()))),
+                ]
+            )
         execute_type = ResidualSequence
         self.net = execute_type(layers)
         self.norm = nn.LayerNorm(out_sz)

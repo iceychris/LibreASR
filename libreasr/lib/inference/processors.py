@@ -81,26 +81,33 @@ class MultiInferenceProcessor:
 
 
 class VADProcessor(InferenceProcessor):
-    def __init__(self, sr=16000, vad_duration=0.25, cooldown_duration=0.25, threshold=0.1, debug=False):
+    def __init__(
+        self,
+        sr=16000,
+        vad_duration=0.25,
+        cooldown_duration=0.25,
+        threshold=0.1,
+        debug=False,
+    ):
         super().__init__(debug=debug)
 
         warn_about_license(
-            "VADProcessor",
-            "Silero VAD",
-            "https://github.com/snakers4/silero-vad"
+            "VADProcessor", "Silero VAD", "https://github.com/snakers4/silero-vad"
         )
 
         # load silero vad
-        model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad',
-                                    model='silero_vad',
-                                    force_reload=False)
-        (get_speech_ts,
-        get_speech_ts_adaptive,
-        save_audio,
-        read_audio,
-        state_generator,
-        single_audio_stream,
-        collect_chunks) = utils
+        model, utils = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad", model="silero_vad", force_reload=False
+        )
+        (
+            get_speech_ts,
+            get_speech_ts_adaptive,
+            save_audio,
+            read_audio,
+            state_generator,
+            single_audio_stream,
+            collect_chunks,
+        ) = utils
         self.model = model
 
         # args
@@ -111,10 +118,10 @@ class VADProcessor(InferenceProcessor):
 
         # vars
         self.buffer = []
-        self.cooldown = 0.
+        self.cooldown = 0.0
 
     def on_speech(self, segment: torch.Tensor, ctx: Dict = {}) -> List[torch.Tensor]:
-        
+
         # pass thru if we have recognized speech before
         is_cooldown = False
         segment_sz = segment.size(1) / self.sr
@@ -122,7 +129,7 @@ class VADProcessor(InferenceProcessor):
             is_cooldown = True
             self.cooldown -= segment_sz
         else:
-            self.cooldown = 0.
+            self.cooldown = 0.0
 
         # do vad
         vad_outs = self.model(segment.squeeze())
@@ -138,7 +145,7 @@ class VADProcessor(InferenceProcessor):
             return [segment]
         else:
             return [None]
-    
+
 
 class WakewordProcessor(InferenceProcessor):
     def __init__(self, sr=16000, frame_length=512, keywords=["computer"], debug=False):
@@ -147,17 +154,18 @@ class WakewordProcessor(InferenceProcessor):
         warn_about_license(
             "WakewordProcessor",
             "Picovoice Porcupine Wake-Word-Detection",
-            "https://github.com/Picovoice/porcupine"
+            "https://github.com/Picovoice/porcupine",
         )
 
         # load pvporcupine
         import pvporcupine
+
         keyword_paths = [pvporcupine.KEYWORD_PATHS[x] for x in keywords]
         porcupine = pvporcupine.create(keyword_paths=keyword_paths)
 
         # args
         self.sr = sr
-        self.frame_length = frame_length 
+        self.frame_length = frame_length
         self.keywords = keywords
 
         # vars
@@ -168,19 +176,21 @@ class WakewordProcessor(InferenceProcessor):
     def on_speech(self, segment: torch.Tensor, ctx: Dict = {}) -> List[torch.Tensor]:
 
         # if segment is None, bail
-        if segment is None: return [None]
+        if segment is None:
+            return [None]
 
         # accumulate pieces of size self.frame_length
         #  and convert into correct format
         pcm = segment
-        pcm = (pcm * 255.).int()[0].tolist()
+        pcm = (pcm * 255.0).int()[0].tolist()
         self.debug("pcm stats", segment.mean(), segment.std())
 
         # run detection
         def chunks(lst, n):
             """Yield successive n-sized chunks from lst."""
             for i in range(0, len(lst), n):
-                yield lst[i:i + n]
+                yield lst[i : i + n]
+
         for chunk in chunks(pcm, self.frame_length):
             result = self.porcupine.process(chunk)
             if result >= 0:
@@ -188,10 +198,11 @@ class WakewordProcessor(InferenceProcessor):
                 self.debug(f"detected '{kw}'")
                 self.muted = False
                 self.bus.emit(WakewordEvent(kw))
-        
+
         if not self.muted:
             return [segment]
-        else: return [None]
+        else:
+            return [None]
 
     def on_event(self, event: InferenceEvent, bus: EventBus):
         if self.bus is None:
@@ -201,7 +212,6 @@ class WakewordProcessor(InferenceProcessor):
 
 
 class EventDebugProcessor(InferenceProcessor):
-
     def on_speech(self, segment: torch.Tensor, ctx: Dict = {}) -> List[torch.Tensor]:
         return [segment]
 
@@ -215,6 +225,7 @@ class TranscriptProcessor(InferenceProcessor):
     To Do:
     - don't emit event if last transcript is same
     """
+
     def __init__(self, denumericalizer, choose_best=True, blank=0, debug=False):
         super().__init__(debug=debug)
         self.denumericalizer = denumericalizer
@@ -224,7 +235,7 @@ class TranscriptProcessor(InferenceProcessor):
 
     def on_event(self, event: InferenceEvent, bus: EventBus):
         if event.tag == EventTag.HYPOTHESIS:
-            hyps = event.hyps 
+            hyps = event.hyps
             hyp = []
             if self.choose_best:
                 hyp = sorted(hyps, key=lambda x: x[-1], reverse=True)[0]
@@ -252,13 +263,14 @@ class EOSProcessor(InferenceProcessor):
     of duration `silence`.
     Fires `SilenceEvent`.
     """
+
     def __init__(self, sr=16000, silence=2.0, debug=False):
         super().__init__(debug=debug)
 
         # args
         self.sr = sr
         self.silence = silence
-        self.frame_length = 2560 
+        self.frame_length = 2560
         self.chunk = -1
 
         # vars
@@ -277,7 +289,13 @@ class EOSProcessor(InferenceProcessor):
         if is_silence:
             self.bus.emit(SilenceEvent(diff))
             self.blocked = True
-        self.debug(is_silence, self.segment_counter, self.last_hypothesis_at, diff, self.blocked)
+        self.debug(
+            is_silence,
+            self.segment_counter,
+            self.last_hypothesis_at,
+            diff,
+            self.blocked,
+        )
         return is_silence
 
     def on_speech(self, segment: torch.Tensor, ctx: Dict = {}) -> List[torch.Tensor]:
@@ -308,6 +326,7 @@ class SentenceProcessor(InferenceProcessor):
     Turns `TranscriptEvent` into `SentenceEvent`
     when silence is hit.
     """
+
     def __init__(self, debug=False):
         super().__init__(debug=debug)
         self.handle = None
@@ -345,7 +364,7 @@ class AssistantProcessor(InferenceProcessor):
 
     def answer(self, question):
         text = question
-        answer = "Ich habe deine Frage nicht verstanden." 
+        answer = "Ich habe deine Frage nicht verstanden."
         if "hallo" in text or "welt" in text:
             answer = "Hallo ich bin ein automatisches Spracherkennungssystem."
         if "wetter" in text and ("heute" in text or "morgen" in text):
@@ -360,7 +379,7 @@ class AssistantProcessor(InferenceProcessor):
     def on_event(self, event: InferenceEvent, bus: EventBus):
         if event.tag == EventTag.SENTENCE:
             text = event.transcript
-            answer = self.answer(text) 
+            answer = self.answer(text)
             bus.emit(AssistantAnswerEvent(answer))
 
 
@@ -371,7 +390,10 @@ class TTSProcessor(InferenceProcessor):
     """
 
     def tts(self, text, lang="de", speed=160):
-        p = subprocess.Popen(['espeak', '--stdout', f'-v{lang}', f'-s {speed}', text], stdout=subprocess.PIPE)
+        p = subprocess.Popen(
+            ["espeak", "--stdout", f"-v{lang}", f"-s {speed}", text],
+            stdout=subprocess.PIPE,
+        )
         audio, err = p.communicate()
         audio = np.frombuffer(audio, dtype=np.int16)
         return audio
@@ -379,5 +401,5 @@ class TTSProcessor(InferenceProcessor):
     def on_event(self, event: InferenceEvent, bus: EventBus):
         if event.tag == EventTag.ASSISTANT_ANSWER:
             text = event.answer
-            audio = self.tts(text) 
+            audio = self.tts(text)
             bus.emit(TTSEvent(audio))
