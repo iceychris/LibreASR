@@ -26,6 +26,7 @@ EVENTS_FROM_MODEL = (
 
 EVENTS_FOR_OUTPUT = (
     EventTag.HYPOTHESIS,
+    EventTag.TRANSCRIPT,
     EventTag.SENTENCE,
     EventTag.ASSISTANT_ANSWER,
     EventTag.TTS,
@@ -65,7 +66,7 @@ class HypothesisEvent(InferenceEvent):
         self.hyps = hyps
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} hyps={len(self.hyps)}>"
+        return f"<{self.__class__.__name__} hyps={len(self.hyps)} {self.hyps[0][0]}>"
 
 
 class WakewordEvent(InferenceEvent):

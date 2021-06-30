@@ -226,7 +226,7 @@ class Beamer(nn.Module):
             #  commit best as we need new outputs
             best = best.with_enc(enc).commit()
             if self.debug:
-                print(f"extending: {best.str()}")
+                print(f"[{self.t}] extending: {best.str()}")
 
             # append blank and add to beam
             t = self.t
@@ -247,6 +247,7 @@ class Beamer(nn.Module):
 
         # increment frame counter
         self.t += 1
+        # print(self.t, enc.mean(), enc.std())
 
         # return all hypotheses
         return [(x.tokens, x.score) for x in self.all]

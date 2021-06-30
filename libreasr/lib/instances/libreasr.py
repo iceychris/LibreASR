@@ -111,8 +111,10 @@ class LibreASRInstance(BaseInstance):
             # grab last output
             l = list(stream_output)
             filtered = list(filter(lambda x: x.tag == EventTag.SENTENCE, l))
-            last = filtered[-1]
-            return last.transcript
+            if len(filtered) > 0:
+                last = filtered[-1]
+                return last.transcript
+            return ""
 
         transcripts = None
         if isinstance(sth, (str, pathlib.Path)):

@@ -154,7 +154,8 @@ def infer_stream(
     blanks = 0
     nonblanks = 0
     output_found = False
-    for chunk in generator:
+    chunks = []
+    for i, chunk in enumerate(generator):
 
         # in case we get a None, just continue
         if chunk is None:
@@ -178,13 +179,14 @@ def infer_stream(
         chunk = self.preprocessor.stack_downsample(chunk)
 
         # forward pass encoder
+        chunks.append(chunk)
         encoder_out, encoder_state = enc(chunk, encoder_state, return_state=True)
         h_t_enc = encoder_out[0]
 
         # loop over encoder states (t)
         y_seq = []
-        for i in range(h_t_enc.size(-2)):
-            h_enc = h_t_enc[..., i, :]
+        for j in range(h_t_enc.size(-2)):
+            h_enc = h_t_enc[..., j, :]
 
             # perform beam search step
             hyps = beamer(h_enc)

@@ -81,7 +81,7 @@ def download_all(lang, filter_fn=lambda x: x, base_path="~/.cache/LibreASR"):
             kwargs = files[fname]
             path = os.path.join(base_path, fname)
             download(path=path, **kwargs)
-        return lang, os.path.join(base_path, "config.yaml")
+        return lang, release, os.path.join(base_path, "config.yaml")
 
 
 def download_configs(fname="config.yaml", base_path="~/.cache/LibreASR"):

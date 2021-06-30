@@ -13,18 +13,19 @@ LANGS = "de,en,fr,sv,es,eo,it,nl".split(",")
 LANG_TO_IDX = {l: i for i, l in enumerate(LANGS)}
 
 
-def warn(msg):
-    m = f"WARN | {msg}"
+def warn(msg, hard=False):
+    m = f"[warning] {msg}"
     mn = m + "\n"
     print(m)
-    print(m, file=sys.stderr)
-    try:
-        sys.__stdout__.write(mn)
-        sys.__stderr__.write(mn)
-        sys.__stdout__.flush()
-        sys.__stderr__.flush()
-    except:
-        pass
+    if hard:
+        print(m, file=sys.stderr)
+        try:
+            sys.__stdout__.write(mn)
+            sys.__stderr__.write(mn)
+            sys.__stdout__.flush()
+            sys.__stderr__.flush()
+        except:
+            pass
 
 
 def update(d, u):

@@ -15,6 +15,13 @@ class ResidualSequence(nn.Module):
             x = x + layer(x, **kwargs)
         return x
 
+    def gather_state(self):
+        states = []
+        for layer in self.layers:
+            s = layer.fn.fn.state
+            states.append(s)
+        return states
+
 
 # https://arxiv.org/abs/2103.17239
 class LayerScale(nn.Module):
@@ -45,13 +52,21 @@ class PreNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 
-class First(nn.Module):
-    def __init__(self, fn):
+class LSTMWrapper(nn.Module):
+    def __init__(self, fn, idx):
         super().__init__()
         self.fn = fn
+        self.idx = idx
+        self.state = None
 
-    def forward(self, x, **kwargs):
-        return self.fn(x, **kwargs)[0]
+    def forward(self, x, state=None, **kwargs):
+        if state is not None:
+            s = state[self.idx]
+        else:
+            s = None
+        x, s = self.fn(x, s, **kwargs)
+        self.state = s
+        return x
 
 
 class SlimEncoder(nn.Module):
@@ -95,7 +110,7 @@ class SlimEncoder(nn.Module):
         for ind in range(num_layers):
             layers.extend(
                 [
-                    LayerScale(dim, ind + 1, PreNorm(dim, First(lstm()))),
+                    LayerScale(dim, ind + 1, PreNorm(dim, LSTMWrapper(lstm(), ind))),
                 ]
             )
         execute_type = ResidualSequence
@@ -110,12 +125,16 @@ class SlimEncoder(nn.Module):
         x = self.drop_input(x)
         x = self.input_norm(x)
 
+        # main block
         x = self.ff1(x)
-        x = self.net(x)
+        x = self.net(x, state=state)
         x = self.ff2(x)
         x = self.drop(x)
 
+        # final norm
         x = self.norm(x)
+
         if return_state:
-            return x, None
+            s = self.net.gather_state()
+            return x, s
         return x

@@ -48,8 +48,8 @@ def load_stuff(lang, config_path=None, **kwargs):
     x_tfm = Pipeline(preload_tfms(tfms[0], tfm_args))
     x_tfm_stream = Pipeline(preload_tfms(tfms[1], tfm_args))
 
-    print("[inference] Model and Pipeline set up.")
-    print("[inference] Transforms:", x_tfm)
-    print("[inference] Stream Transforms:", x_tfm_stream)
+    print(f"[inference] Model and Pipeline set up.")
+    print(f"[inference] Transcribe Transforms: [{x_tfm}]")
+    print(f"[inference] Stream     Transforms: [{x_tfm_stream}]")
 
     return conf, lang, m, x_tfm, x_tfm_stream

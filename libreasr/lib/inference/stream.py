@@ -48,9 +48,9 @@ def transcribe_stream(
         ]
     else:
         processors = [
-            EOSProcessor(),
+            # EOSProcessor(),
             TranscriptProcessor(lang.denumericalize),
-            SentenceProcessor(),
+            # SentenceProcessor(),
         ]
     if dbg_proc:
         processors.append(EventDebugProcessor())

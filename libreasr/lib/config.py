@@ -15,6 +15,8 @@ from libreasr.lib.models import get_model
 from libreasr.lib.learner import LibreASRLearner
 from libreasr.lib.lm import load_lm
 from libreasr.lib.download import download_all
+from libreasr.lib.utils import warn
+from libreasr.lib.defaults import DEFAULT_STREAM_TRANSFORMS
 
 
 def open_config(*args, path="./config/testing.yaml", **kwargs):
@@ -69,13 +71,18 @@ def parse_transforms(conf, inference):
 
 def apply_cuda_stuff(conf):
     ddp = conf.get("training", {}).get("ddp", {}).get("enable", False)
-    if conf["cuda"]["enable"] and torch.cuda.is_available():
+
+    # set correct gpu
+    if conf["cuda"]["enable"]:
         if torch.cuda.is_available():
             if not ddp:
                 torch.cuda.set_device(int(conf["cuda"]["device"].split(":")[1]))
             torch.backends.cudnn.benchmark = conf["cuda"]["benchmark"]
         else:
-            raise Exception("cuda not available")
+            warn("cuda enabled in config but not available...")
+            warn("... switching to cpu execution")
+            conf["cuda"]["enable"] = False
+            conf["cuda"]["device"] = "cpu"
 
 
 def check_vocab_sz(conf):
@@ -117,12 +124,34 @@ def fix_config(conf):
             conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
 
 
+def fix_config_inference(conf, model_name, base="~/.cache/LibreASR"):
+    # check if tokenizer path is correct
+    p = os.path.expanduser(conf["tokenizer"]["model_file"])
+    if not Path(p).exists():
+        p = f"{base}/{model_name}/tokenizer.yttm-model"
+        conf["tokenizer"]["model_file"] = p
+
+    # make sure the model path is correct
+    conf["model"]["load"] = True
+    p = f"{base}/{model_name}/model.pth"
+    update(conf["model"], {"path": {"n": p}})
+
+
 def fix_transforms(conf, inference=False):
     if inference:
+        # stream transforms
         conf["transforms"]["x"] = conf["transforms"]["x"][1:]
         if "stream" not in list(conf["transforms"].keys()):
-            print("[inference] warning: no streaming transforms defined...")
-            conf["transforms"]["stream"] = conf["transforms"]["x"]
+            warn("no stream transforms defined...")
+            warn("... using defaults")
+            conf["transforms"]["stream"] = DEFAULT_STREAM_TRANSFORMS
+
+        # transcribe transforms
+        l = conf["transforms"]["x"]
+        for t in l:
+            if t["name"] == "PadderCutter":
+                # remove
+                l.remove(t)
 
 
 def parse_and_apply_config(
@@ -131,9 +160,10 @@ def parse_and_apply_config(
 
     # download pretrained models
     if inference and path is None:
-        lang, mcp = download_all(lang)
-        if mcp is not None:
-            conf = open_config(*args, path=mcp, **kwargs)
+        lang, release, config_path = download_all(lang)
+        if config_path is not None:
+            conf = open_config(*args, path=config_path, **kwargs)
+            fix_config_inference(conf, release)
     else:
         # open config
         conf = open_config(*args, path=path, **kwargs)

@@ -29,6 +29,9 @@ class TestTranscribe(unittest.TestCase):
         self.assertTrue(all([isinstance(x, str) for x in res]))
         [print(" >bX< " + x) for x in res]
 
+    def test_download(self):
+        l = LibreASR("en")
+
     """
     def test_unbatched_equals_batched(self):
         a = self.l.transcribe(WAVS, batch=False)

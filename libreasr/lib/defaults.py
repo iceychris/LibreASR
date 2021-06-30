@@ -12,10 +12,10 @@ LM_DEBUG = False
 MODEL_TEMP = 1.0
 
 # beam search
-DEFAULT_MAX_ITERS = 3  # 5
+DEFAULT_MAX_ITERS = 5
 DEFAULT_BEAM_SEARCH_OPTS = {
-    "beam_width": 1,
-    "topk_next": 1,
+    "beam_width": 2,
+    "topk_next": 2,
     "predictor_cache_sz": 4,  # 128, # 1024,
     "joint_cache_sz": 4,  # 128, # 1024,
     "score_cache_sz": 4,  # 128, # 1024,
@@ -33,6 +33,14 @@ DEFAULT_STREAM_OPTS = {
     "assistant_keywords": ["computer"],
     "debug": False,
 }
+# stream:
+#   - name: Resample
+#     partial: true
+#     args:
+#       resample_sr: 16000
+DEFAULT_STREAM_TRANSFORMS = [
+    {"name": "Resample", "partial": True, "args": {"resample_sr": 16000}}
+]
 
 # PyTorch
 TORCH_NUM_CPU_THREADS = 4

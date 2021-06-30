@@ -18,7 +18,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
     syntax="proto3",
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
-    serialized_pb=b'\n\x0elibreasr.proto\x12\x08LibreASR"!\n\x05\x41udio\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\n\n\x02sr\x18\x02 \x01(\x05"\x1a\n\nTranscript\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\t"%\n\x0fTranscriptEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"#\n\rSentenceEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"b\n\x05\x45vent\x12\'\n\x02te\x18\x01 \x01(\x0b\x32\x19.LibreASR.TranscriptEventH\x00\x12%\n\x02se\x18\x02 \x01(\x0b\x32\x17.LibreASR.SentenceEventH\x00\x42\t\n\x07\x63ontent2}\n\x08LibreASR\x12\x35\n\nTranscribe\x12\x0f.LibreASR.Audio\x1a\x14.LibreASR.Transcript"\x00\x12:\n\x10TranscribeStream\x12\x0f.LibreASR.Audio\x1a\x0f.LibreASR.Event"\x00(\x01\x30\x01\x62\x06proto3',
+    serialized_pb=b'\n\x0elibreasr.proto\x12\x08LibreASR"/\n\x05\x41udio\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\n\n\x02sr\x18\x02 \x01(\x05\x12\x0c\n\x04lang\x18\x03 \x01(\t"\x1a\n\nTranscript\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\t"%\n\x0fTranscriptEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"#\n\rSentenceEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"b\n\x05\x45vent\x12\'\n\x02te\x18\x01 \x01(\x0b\x32\x19.LibreASR.TranscriptEventH\x00\x12%\n\x02se\x18\x02 \x01(\x0b\x32\x17.LibreASR.SentenceEventH\x00\x42\t\n\x07\x63ontent2}\n\x08LibreASR\x12\x35\n\nTranscribe\x12\x0f.LibreASR.Audio\x1a\x14.LibreASR.Transcript"\x00\x12:\n\x10TranscribeStream\x12\x0f.LibreASR.Audio\x1a\x0f.LibreASR.Event"\x00(\x01\x30\x01\x62\x06proto3',
 )
 
 
@@ -68,6 +68,25 @@ _AUDIO = _descriptor.Descriptor(
             file=DESCRIPTOR,
             create_key=_descriptor._internal_create_key,
         ),
+        _descriptor.FieldDescriptor(
+            name="lang",
+            full_name="LibreASR.Audio.lang",
+            index=2,
+            number=3,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
     ],
     extensions=[],
     nested_types=[],
@@ -78,7 +97,7 @@ _AUDIO = _descriptor.Descriptor(
     extension_ranges=[],
     oneofs=[],
     serialized_start=28,
-    serialized_end=61,
+    serialized_end=75,
 )
 
 
@@ -118,8 +137,8 @@ _TRANSCRIPT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=63,
-    serialized_end=89,
+    serialized_start=77,
+    serialized_end=103,
 )
 
 
@@ -159,8 +178,8 @@ _TRANSCRIPTEVENT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=91,
-    serialized_end=128,
+    serialized_start=105,
+    serialized_end=142,
 )
 
 
@@ -200,8 +219,8 @@ _SENTENCEEVENT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=130,
-    serialized_end=165,
+    serialized_start=144,
+    serialized_end=179,
 )
 
 
@@ -269,8 +288,8 @@ _EVENT = _descriptor.Descriptor(
             fields=[],
         ),
     ],
-    serialized_start=167,
-    serialized_end=265,
+    serialized_start=181,
+    serialized_end=279,
 )
 
 _EVENT.fields_by_name["te"].message_type = _TRANSCRIPTEVENT
@@ -349,8 +368,8 @@ _LIBREASR = _descriptor.ServiceDescriptor(
     index=0,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
-    serialized_start=267,
-    serialized_end=392,
+    serialized_start=281,
+    serialized_end=406,
     methods=[
         _descriptor.MethodDescriptor(
             name="Transcribe",

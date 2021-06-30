@@ -10,6 +10,7 @@ service LibreASR {
 message Audio {
   bytes data = 1;
   int32 sr = 2;
+  string lang = 3;
 }
 
 message Transcript {
