@@ -110,7 +110,8 @@ class LibreASRInstance(BaseInstance):
         def get_result(stream_output) -> str:
             # grab last output
             l = list(stream_output)
-            filtered = list(filter(lambda x: x.tag == EventTag.SENTENCE, l))
+            tags = (EventTag.TRANSCRIPT, EventTag.SENTENCE)
+            filtered = list(filter(lambda x: x.tag in tags, l))
             if len(filtered) > 0:
                 last = filtered[-1]
                 return last.transcript

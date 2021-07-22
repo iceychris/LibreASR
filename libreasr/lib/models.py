@@ -7,10 +7,10 @@ from functools import partial, lru_cache
 import itertools
 import math
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional, Tuple
 
 import torch
-from torch import nn, einsum
+from torch import nn, einsum, Tensor
 import torch.nn.functional as F
 
 import numpy as np
@@ -33,10 +33,7 @@ from libreasr.lib.defaults import (
     DEFAULT_BEAM_SEARCH_OPTS,
 )
 from libreasr.lib.layers.encoders.slim import SlimEncoder
-from libreasr.lib.inference.beamsearch import (
-    BeamStateBuilder,
-    Beamer,
-    print_beam_results,
+from libreasr.lib.inference.beamsearch.libreasr import (
     start_rnnt_beam_search,
 )
 
@@ -170,6 +167,12 @@ class Preprocessor(Module):
         self.downsample = downsample
         self.stack = stack
 
+    def to_jit(self):
+        jittify_mel_spectrogram(self.spec)
+        jittify_stft(self.spec.stft)
+        self.specaugment = None
+        self.__class__ = PreprocessorJit
+
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
@@ -189,6 +192,78 @@ class Preprocessor(Module):
             xl = torch.clamp(xl // (fac * self.downsample), min=1, max=x.size(1))
             return x, xl
         return x
+
+
+def jittify_stft(stft):
+    from nnAudio.Spectrogram import STFT
+
+    # fix padding issue
+    stft.padder = nn.ReflectionPad1d(stft.pad_amount)
+
+    # replace class
+    class STFTJit(STFT):
+        def forward(self, x: Tensor) -> Tensor:
+            # assume: self.freq_bins is None
+            output_format = self.output_format
+            freq_bins: int = int(10e6)
+            trainable: bool = self.trainable
+            num_samples = x.size(-1)
+
+            # assume: x.shape == [B, T]
+            x = x[:, None, :]
+
+            # assume: center + reflect
+            if num_samples < self.pad_amount:
+                raise AssertionError(
+                    "Signal length shorter than reflect padding length (n_fft // 2)."
+                )
+            x = self.padder(x)
+
+            spec_imag = F.conv1d(x, self.wsin, stride=self.stride)
+            spec_real = F.conv1d(
+                x, self.wcos, stride=self.stride
+            )  # Doing STFT by using conv1d
+
+            # remove redundant parts
+            spec_real = spec_real[:, :freq_bins, :]
+            spec_imag = spec_imag[:, :freq_bins, :]
+
+            # assume: output_format=='Magnitude'
+            spec = spec_real.pow(2) + spec_imag.pow(2)
+            if trainable:
+                return torch.sqrt(
+                    spec + 1e-8
+                )  # prevent Nan gradient when sqrt(0) due to output=0
+            else:
+                return torch.sqrt(spec)
+
+    stft.__class__ = STFTJit
+
+
+def jittify_mel_spectrogram(spec):
+    from nnAudio.Spectrogram import MelSpectrogram
+
+    # replace class
+    class MelSpectrogramJit(MelSpectrogram):
+        def forward(self, x: Tensor) -> Tensor:
+            spec = self.stft(x) ** self.power
+            melspec = torch.matmul(self.mel_basis, spec)
+            return melspec
+
+    spec.__class__ = MelSpectrogramJit
+
+
+class PreprocessorJit(Preprocessor):
+    def forward(self, x: Tensor, xl: Tensor, inference: bool) -> Tuple[Tensor, Tensor]:
+        x = x[..., :, 0, 0]
+        x = self.spec(x)
+        x = x.permute(0, 2, 1).contiguous()
+        if not inference:
+            x = self.stack_downsample(x)
+        # TODO: use correct formula for this
+        fac = self.sr // 100
+        xl = torch.clamp(xl // (fac * self.downsample), min=1, max=x.size(1))
+        return x, xl
 
 
 class Encoder(Module):
@@ -295,6 +370,13 @@ class Predictor(Module):
         else:
             self.linear = nn.Sequential()
 
+    def to_jit(self):
+        self.rnn_stack.to_jit()
+        self.__class__ = PredictorJit
+
+    def initial_state(self):
+        return self.rnn_stack.initial_state()
+
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
@@ -305,6 +387,19 @@ class Predictor(Module):
         x = self.drop(x)
         x = self.linear(x)
         return x, state
+
+
+class PredictorJit(Predictor):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        # TODO: remove or use `lengths` properly...
+        x = self.embed(x)
+        x = self.ffn(x)
+        x, new_states = self.rnn_stack(x, lengths, state)
+        x = self.drop(x)
+        x = self.linear(x)
+        return x, new_states
 
 
 class InnerJoint(Module):
@@ -357,6 +452,9 @@ class Joint(Module):
                 nn.Linear(joint_sz, vocab_sz),
             )
 
+    def to_jit(self):
+        self.__class__ = JointJit
+
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
 
@@ -397,6 +495,26 @@ class Joint(Module):
             if log:
                 f = F.log_softmax
             x = f(x / temp, dim=-1)
+        return x
+
+
+class JointJit(Joint):
+    def forward(
+        self, h_pred: Tensor, h_enc: Tensor, softmax: bool, log: bool
+    ) -> Tensor:
+        N, U, H_p = h_pred.shape
+        N, T, H_e = h_enc.shape
+        sz_e = (N, T, U, H_e)
+        sz_p = (N, T, U, H_p)
+        h_enc = h_enc.unsqueeze(2).expand(sz_e).contiguous()
+        h_pred = h_pred.unsqueeze(1).expand(sz_p).contiguous()
+        x = torch.cat((h_pred, h_enc), dim=-1)
+        x = self.joint(x)
+        if softmax:
+            if log:
+                x = F.log_softmax(x, dim=-1)
+            else:
+                x = F.softmax(x, dim=-1)
         return x
 
 
@@ -917,9 +1035,6 @@ class Transducer(Module):
 
             # record how many iters we had
             extra["iters"].append(-1)
-
-        # finalize beam search
-        # print_beam_results(beamer.all, denumericalize_fn=self.lang.denumericalize, top=4)
 
         # extract best hypothesis
         #  cut off BOS

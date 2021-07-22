@@ -1,8 +1,10 @@
 from functools import partial
+from typing import List, Optional, Tuple
 
 import torch
-from torch import nn
+from torch import nn, Tensor
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 
 class ResidualSequence(nn.Module):
@@ -21,6 +23,24 @@ class ResidualSequence(nn.Module):
             s = layer.fn.fn.state
             states.append(s)
         return states
+
+    def to_jit(self):
+        self.__class__ = ResidualSequenceJit
+        for m in self.layers:
+            m.to_jit()
+
+
+class ResidualSequenceJit(ResidualSequence):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        l: List[Tuple[Tensor, Tensor]] = []
+        for layer in self.layers:
+            residual = x
+            x, s = layer(x, lengths, state)
+            l.append(s)
+            x = residual + x
+        return x, l
 
 
 # https://arxiv.org/abs/2103.17239
@@ -41,6 +61,18 @@ class LayerScale(nn.Module):
     def forward(self, x, **kwargs):
         return self.fn(x, **kwargs) * self.scale
 
+    def to_jit(self):
+        self.__class__ = LayerScaleJit
+        self.fn.to_jit()
+
+
+class LayerScaleJit(LayerScale):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        x, s = self.fn(x, lengths, state)
+        return x * self.scale, s
+
 
 class PreNorm(nn.Module):
     def __init__(self, dim, fn):
@@ -50,6 +82,17 @@ class PreNorm(nn.Module):
 
     def forward(self, x, **kwargs):
         return self.fn(self.norm(x), **kwargs)
+
+    def to_jit(self):
+        self.__class__ = PreNormJit
+        self.fn.to_jit()
+
+
+class PreNormJit(PreNorm):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        return self.fn(self.norm(x), lengths, state)
 
 
 class LSTMWrapper(nn.Module):
@@ -67,6 +110,21 @@ class LSTMWrapper(nn.Module):
         x, s = self.fn(x, s, **kwargs)
         self.state = s
         return x
+
+    def to_jit(self):
+        self.__class__ = LSTMWrapperJit
+
+
+class LSTMWrapperJit(LSTMWrapper):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor]]:
+        if state is None:
+            s = None
+        else:
+            s = state[self.idx]
+        xn, sn = self.fn(x, s)
+        return xn, sn
 
 
 class SlimEncoder(nn.Module):
@@ -105,6 +163,7 @@ class SlimEncoder(nn.Module):
 
         # initialize recurrent layers
         dim = hidden_sz
+        self.dim = dim
         lstm = partial(nn.LSTM, dim, dim, batch_first=True, num_layers=1)
         layers = []
         for ind in range(num_layers):
@@ -116,6 +175,18 @@ class SlimEncoder(nn.Module):
         execute_type = ResidualSequence
         self.net = execute_type(layers)
         self.norm = nn.LayerNorm(out_sz)
+
+    def initial_state(self):
+        nl, dim = self.num_layers, self.dim
+
+        def mk_zeros(*a):
+            return torch.zeros(*a)
+
+        return [(mk_zeros(1, 1, dim), mk_zeros(1, 1, dim)) for _ in range(nl)]
+
+    def to_jit(self):
+        self.net.to_jit()
+        self.__class__ = SlimEncoderJit
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
@@ -138,3 +209,23 @@ class SlimEncoder(nn.Module):
             s = self.net.gather_state()
             return x, s
         return x
+
+
+class SlimEncoderJit(SlimEncoder):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        x = x.reshape((x.size(0), x.size(1), -1))
+        x = self.drop_input(x)
+        x = self.input_norm(x)
+
+        # main block
+        x = self.ff1(x)
+        x, new_state = self.net(x, lengths, state)
+        x = self.ff2(x)
+        x = self.drop(x)
+
+        # final norm
+        x = self.norm(x)
+
+        return x, new_state

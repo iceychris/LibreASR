@@ -1,9 +1,10 @@
 import math
 import random
+from typing import List, Optional, Tuple
 
 import torch
+from torch import nn, Tensor
 from torch.nn import Parameter, ParameterList
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -98,6 +99,7 @@ class StackedRNN(nn.Module):
         super().__init__()
         self.batch_first = batch_first
         self.hidden_size = hidden_size
+        self.num_layers = num_layers
         self._is = [input_size] + [hidden_size] * (num_layers - 1)
         self._os = [hidden_size] * num_layers
         self.rnn_type = rnn_type
@@ -148,6 +150,18 @@ class StackedRNN(nn.Module):
             self.dropouts = nn.ModuleList(
                 [nn.Dropout(dropout) for _ in range(num_layers)]
             )
+
+    def to_jit(self):
+        self.__class__ = StackedRNNJit
+
+    def initial_state(self, bs=1):
+        s = []
+        for i in range(self.num_layers):
+            a = self.hs[i][0].expand(1, bs, self._os[i]).contiguous()
+            b = self.hs[i][0].expand(1, bs, self._os[i]).contiguous()
+            s.append((a, b))
+        s = tuple(s)
+        return s
 
     def forward_one_rnn(
         self, x, i, state=None, should_use_tmp_state=False, lengths=None
@@ -264,4 +278,22 @@ class StackedRNN(nn.Module):
                 ]
             else:
                 self.cache[bs] = [h.detach() for h in new_states]
+        return x, new_states
+
+
+class StackedRNNJit(StackedRNN):
+    def forward(
+        self, x: Tensor, lengths: Tensor, state: Optional[List[Tuple[Tensor, Tensor]]]
+    ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        new_states: List[Tuple[Tensor, Tensor]] = []
+        for i, (rnn, norm) in enumerate(zip(self.rnns, self.bns)):
+            # x, s = rnn(x, state[i])
+            if state is None:
+                # use learnable state
+                s = (self.hs[i][0], self.hs[i][1])
+            else:
+                s = state[i]
+            x, s = rnn(x, s)
+            new_states.append(s)
+            x = norm(x)
         return x, new_states
