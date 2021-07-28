@@ -69,6 +69,7 @@ def get_dataset_paths(conf, mode):
 class ASRDatabunchBuilder:
     def __init__(self):
         self.do_shuffle = False
+        self.drop_labels = False
         self.mode = None
         self.suffix = ""
 
@@ -81,6 +82,7 @@ class ASRDatabunchBuilder:
         builder = (
             ASRDatabunchBuilder().set_mode(mode).set_suffix(suffix).multi(paths, pcent)
         )
+        builder.set_drop_labels(conf.get("builder", {}).get("drop_labels", False))
         if conf["apply_x_limits"]:
             builder = builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
         if conf["apply_y_limits"]:
@@ -98,6 +100,10 @@ class ASRDatabunchBuilder:
 
     def set_suffix(self, suffix):
         self.suffix = suffix
+        return self
+
+    def set_drop_labels(self, dl):
+        self.drop_labels = dl
         return self
 
     def single(self, path):
@@ -170,7 +176,10 @@ class ASRDatabunchBuilder:
         df["sr"] = df["sr"].astype(int)
         self.df = df
 
-    def _remove_columns(self):
+    def _remove_and_clean_columns(self):
+        if self.drop_labels:
+            self.df.label = ""
+            self.df.ylen = 1
         try:
             self.df.drop(["bad", "lang"], axis="columns", inplace=True)
         except:
@@ -180,7 +189,7 @@ class ASRDatabunchBuilder:
         self._assert_has_df()
         self._fix_columns()
         self._apply_limits()
-        self._remove_columns()
+        self._remove_and_clean_columns()
         if self.do_shuffle:
             self.df = self.df.sample(frac=1, random_state=seed)
         if sort:

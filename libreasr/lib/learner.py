@@ -12,7 +12,7 @@ from fastai.callback.tracker import (
     SaveModelCallback,
     ReduceLROnPlateau,
 )
-from fastai.callback.fp16 import MixedPrecision
+from fastai.callback.fp16 import NativeMixedPrecision
 from fastai.callback.data import CudaCallback
 from fastai.optimizer import Adam, Lamb, Lookahead, ranger
 from fastai.torch_core import rank_distrib
@@ -25,7 +25,7 @@ from libreasr.lib.callbacks import (
     GradAccumCallback,
     GradAccumCallbackDDP,
     Rank0Wrapper,
-    EvalSpeechModel,
+    EvaluatorCallback,
 )
 from libreasr.lib.optimizer import AdaHessian, Apollo, ranger_adabelief
 from libreasr.lib.utils import warn
@@ -57,7 +57,7 @@ def over9000(p, lr=slice(3e-3)):
 
 
 class HutchinsonTraceCallback(Callback):
-    run_before = MixedPrecision
+    run_before = NativeMixedPrecision
 
     def __init__(self, block_length=1):
         self.block_length = block_length
@@ -198,11 +198,13 @@ class LibreASRLearner(Learner):
         mp = conf.get("training", {}).get("mp", {}).get("enable", False)
         lang_name = conf.get("lang", "unknown")
         ddp = conf.get("training", {}).get("ddp", {}).get("enable", False)
-        espm_kwargs = conf.get("espm_kwargs", {})
-        espm_kwargs.update({"lang_name": lang_name})
+        evaluator_kwargs = conf.get("evaluator", {}).get("kwargs", {})
+        evaluator_kwargs.update({"lang_name": lang_name})
         use_persistence_cbs = not ddp or rank_distrib() == 0
         clip = conf.get("training", {}).get("clip-grad-norm", 0.0)
         use_tensorboard = conf["tensorboard"]
+        device = conf["cuda"]["device"]
+        objective = conf["loss"]["type"] or "rnnt"
 
         # define callbacks
         cbs = [
@@ -210,12 +212,30 @@ class LibreASRLearner(Learner):
             TerminateOnNaNCallback(),
             # ReduceLROnPlateau(patience=1, min_lr=1e-5, factor=1.5),
         ]
+
+        # grab the correct evaluator
+        if objective == "contrastive":
+            from libreasr.eval import LinearEvaluator
+
+            evaluator = LinearEvaluator(device=device)
+        elif objective == "rnnt":
+            from libreasr.eval import TranscribeEvaluator
+
+            evaluator = TranscribeEvaluator(device=device, lang_name=lang_name)
+        else:
+            s = f"Evaluator for objective {objective} not implemented."
+            raise NotImplementedError(s)
+
+        # add callbacks that
+        #  should only get executed once
+        #  when running in ddp mode
         if use_persistence_cbs:
             cbs.append(
-                EvalSpeechModel(
+                EvaluatorCallback(
+                    evaluator=evaluator,
                     ddp=ddp,
                     tests_per_epoch=tests_per_epoch,
-                    espm_kwargs=espm_kwargs,
+                    **evaluator_kwargs,
                 )
             )
             cbs.append(

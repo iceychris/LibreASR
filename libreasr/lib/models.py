@@ -33,12 +33,14 @@ from libreasr.lib.defaults import (
     DEFAULT_BEAM_SEARCH_OPTS,
 )
 from libreasr.lib.layers.encoders.slim import SlimEncoder
+from libreasr.modules.encoders import Wav2Vec2Encoder
 from libreasr.lib.inference.beamsearch import (
     BeamStateBuilder,
     Beamer,
     print_beam_results,
     start_rnnt_beam_search,
 )
+from libreasr.modules.ssl import pi_loss
 
 
 class ResidualAdapter(Module):
@@ -88,13 +90,23 @@ class SpecAugment(Module):
     Contains time and frequency masking.
     """
 
-    def __init__(self, time_mask_n=2, time_mask_sz=4, freq_mask_n=4, freq_mask_sz=2):
+    def __init__(
+        self,
+        time_mask_n=2,
+        time_mask_sz=4,
+        freq_mask_n=4,
+        freq_mask_sz=2,
+        start=None,
+        val=None,
+        enable_eval=False,
+    ):
         self.time_mask_n = time_mask_n
         self.time_mask_sz = time_mask_sz
         self.freq_mask_n = freq_mask_n
         self.freq_mask_sz = freq_mask_sz
-        self.start = None
-        self.val = None
+        self.start = start
+        self.val = val
+        self.ee = enable_eval
 
     def mask_time(self, spectro, adaptive=True):
         num_masks = self.time_mask_n
@@ -133,10 +145,10 @@ class SpecAugment(Module):
         sg = self.mask_time(sg, adaptive=False)
         return torch.einsum("...ij->...ji", sg)
 
-    def forward(self, x):
-        if not self.training:
+    def forward(self, x, mask_time_adaptive=True, no_augmentation=False):
+        if ((not self.training) and (not self.ee)) or no_augmentation:
             return x
-        x = self.mask_time(x)
+        x = self.mask_time(x, adaptive=mask_time_adaptive)
         x = self.mask_freq(x)
         return x
 
@@ -144,6 +156,7 @@ class SpecAugment(Module):
 class Preprocessor(Module):
     def __init__(
         self,
+        enable=True,
         sr=16000,
         n_mels=80,
         n_fft=1024,
@@ -154,6 +167,9 @@ class Preprocessor(Module):
     ):
         from nnAudio.Spectrogram import MelSpectrogram
 
+        self.enable = enable
+        self.sr = sr
+        self.hl = int(0.01 * sr)
         self.spec = MelSpectrogram(
             sr=sr,
             trainable_mel=trainable,
@@ -161,11 +177,10 @@ class Preprocessor(Module):
             n_fft=n_fft,
             n_mels=n_mels,
             win_length=int(0.025 * sr),
-            hop_length=int(0.01 * sr),
+            hop_length=self.hl,
             verbose=False,
         )
         self.specaugment = SpecAugment(**kwargs)
-        self.sr = sr
         self.n_mels = n_mels
         self.downsample = downsample
         self.stack = stack
@@ -178,15 +193,49 @@ class Preprocessor(Module):
         x = x.view(x.size(0), x.size(1), -1).contiguous()
         return x
 
-    def forward(self, x, xl=None, inference=False):
+    def _adjust_lengths(self, x, xl):
+        xl = ((xl / self.hl).floor() + 1).long()
+        xl = xl // self.stack
+        xl = torch.clamp(xl, min=1, max=x.size(1))
+        if xl.max() < x.size(1):
+            xl[-1] = x.size(1)
+        return xl
+
+    def augment(self, x, xl):
         x = self.spec(x[..., :, 0, 0])
-        x = self.specaugment(x)
+
+        # augment using mask
+        ones = torch.ones_like(x)
+        mask = self.specaugment(ones)
+
+        # permute
+        x = x.permute(0, 2, 1).contiguous()
+        mask = mask.permute(0, 2, 1).contiguous()
+        raw_x, raw_mask = x, mask
+
+        # stack/downsample
+        x = self.stack_downsample(x)
+        mask = self.stack_downsample(mask)
+
+        # calc lengths
+        xl = self._adjust_lengths(x, xl)
+        if self.training:
+            pass
+        return x, xl, mask, (raw_x, raw_mask)
+
+    def forward(self, x, xl=None, inference=False, **kwargs):
+        if not self.enable:
+            if xl is not None:
+                return x, xl
+            else:
+                return x
+        x = self.spec(x[..., :, 0, 0])
+        x = self.specaugment(x, **kwargs)
         x = x.permute(0, 2, 1).contiguous()
         if not inference:
             x = self.stack_downsample(x)
         if xl is not None:
-            fac = self.sr // 100
-            xl = torch.clamp(xl // (fac * self.downsample), min=1, max=x.size(1))
+            xl = self._adjust_lengths(x, xl)
             return x, xl
         return x
 
@@ -269,6 +318,7 @@ class Predictor(Module):
         blank=0,
         rnn_type="LSTM",
         norm="bn",
+        final_norm=False,
         use_tmp_state_pcent=0.9,
         **kwargs,
     ):
@@ -294,6 +344,10 @@ class Predictor(Module):
             self.linear = nn.Linear(hidden_sz, out_sz)
         else:
             self.linear = nn.Sequential()
+        if final_norm:
+            self.final_norm = nn.LayerNorm(out_sz)
+        else:
+            self.final_norm = nn.Sequential()
 
     def param_groups(self):
         return [p for p in self.parameters() if p.requires_grad]
@@ -304,6 +358,7 @@ class Predictor(Module):
         x, state = self.rnn_stack(x, state=state, lengths=lengths)
         x = self.drop(x)
         x = self.linear(x)
+        x = self.final_norm(x)
         return x, state
 
 
@@ -323,8 +378,17 @@ class InnerJoint(Module):
 
 
 class Joint(Module):
-    def __init__(self, out_sz, joint_sz, vocab_sz, joint_method, reversible=False):
-        self.joint_method = joint_method
+    def __init__(
+        self,
+        out_sz,
+        joint_sz,
+        vocab_sz,
+        method,
+        reversible=False,
+        bias=True,
+        act="tanh",
+    ):
+        self.method = method
         self.reversible = reversible
         if reversible:
             import memcnn
@@ -351,10 +415,16 @@ class Joint(Module):
             #     nn.Linear(out_sz, vocab_sz),
             # )
             # custom LibreASR
+            if act == "tanh":
+                act = nn.Tanh()
+            elif act == "relu":
+                act = nn.ReLU()
+            else:
+                raise Exception(f"No such activation '{act}'")
             self.joint = nn.Sequential(
-                nn.Linear(out_sz, joint_sz),
-                nn.Tanh(),
-                nn.Linear(joint_sz, vocab_sz),
+                nn.Linear(out_sz, joint_sz, bias=bias),
+                act,
+                nn.Linear(joint_sz, vocab_sz, bias=bias),
             )
 
     def param_groups(self):
@@ -373,16 +443,16 @@ class Joint(Module):
         if normalize_grad:
             h_pred.register_hook(lambda grad: grad / h_enc.size(1))
             h_enc.register_hook(lambda grad: grad / h_pred.size(1))
-        if self.joint_method == "add":
+        if self.method == "add":
             x = h_pred + h_enc
-        elif self.joint_method == "mul":
+        elif self.method == "mul":
             x = h_pred * h_enc
-        elif self.joint_method == "comb":
+        elif self.method == "comb":
             x = torch.cat((h_pred + h_enc, h_pred * h_enc), dim=-1)
-        elif self.joint_method == "concat":
+        elif self.method == "concat":
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
-            raise Exception("No such joint_method")
+            raise Exception("No such method")
         if self.reversible:
             if self.training:
                 x = self.joint(x)
@@ -485,9 +555,7 @@ class Transducer(Module):
         lang,
         l_e=6,
         l_p=2,
-        p_j=0.0,
         blank=0,
-        joint_method="concat",
         perf=False,
         act=F.relu,
         use_tmp_bos=True,
@@ -495,10 +563,10 @@ class Transducer(Module):
         preprocessor_kwargs={},
         encoder_kwargs={},
         predictor_kwargs={},
+        joint_kwargs={},
         enable_encoder=True,
         enable_predictor=True,
         enable_joint=True,
-        joint_reversible=False,
         learnable_stft=False,
         device="cpu",
         loss=False,
@@ -525,11 +593,9 @@ class Transducer(Module):
                 **predictor_kwargs,
             )
         if enable_joint:
-            assert joint_method == "concat"
+            assert joint_kwargs.get("method", "concat") == "concat"
             o_sz = out_sz_enc + out_sz_pre
-            self.joint = Joint(
-                o_sz, joint_sz, vocab_sz, joint_method, reversible=joint_reversible
-            )
+            self.joint = Joint(o_sz, joint_sz, vocab_sz, **joint_kwargs)
         self.feature_sz = feature_sz
         self.lang = lang
         self.blank = blank
@@ -566,8 +632,6 @@ class Transducer(Module):
             lang,
             p_e=conf["model"]["encoder"]["dropout"],
             p_p=conf["model"]["predictor"]["dropout"],
-            p_j=conf["model"]["joint"]["dropout"],
-            joint_method=conf["model"]["joint"]["method"],
             perf=False,
             raw_audio=False,
             use_tmp_bos=conf["model"]["use_tmp_bos"],
@@ -575,10 +639,10 @@ class Transducer(Module):
             preprocessor_kwargs=conf["model"]["preprocessor"],
             encoder_kwargs=conf["model"]["encoder"],
             predictor_kwargs=conf["model"]["predictor"],
+            joint_kwargs=conf["model"]["joint"],
             enable_encoder=conf["model"].get("enable_encoder", True),
             enable_predictor=conf["model"].get("enable_predictor", True),
             enable_joint=conf["model"].get("enable_joint", True),
-            joint_reversible=conf["model"]["joint"]["reversible"],
             learnable_stft=conf["model"]["learnable_stft"],
             device=conf["cuda"]["device"],
             loss=conf["model"].get("loss", False),
@@ -628,7 +692,6 @@ class Transducer(Module):
 
         # unpack
         x, y, xl, yl = tpl
-        # print("x", x.shape)
 
         # preprocess
         with self.ctx("preprocessor"):
@@ -638,9 +701,10 @@ class Transducer(Module):
 
         # encoder
         with self.ctx("encoder"):
-            x = x.reshape(x.size(0), x.size(1), -1)
+            # x = x.reshape(x.size(0), x.size(1), -1)
             encoder_out = self.encoder(x, lengths=xl)
             raw_encoder_out = encoder_out
+            xl = xl * (encoder_out.size(1) / x.size(1))
 
         # N: batch size
         # T: n frames (time)
@@ -888,7 +952,7 @@ class Transducer(Module):
 
         # encode full spectrogram (all timesteps)
         with torch.no_grad():
-            encoder_out = self.encoder(x)[0]
+            encoder_out = self.encoder(x, lengths=torch.LongTensor([x.size(1)]))[0]
 
         # predictor: BOS goes first
         y_one_char = torch.LongTensor([[self.bos]]).to(encoder_out.device)
@@ -1063,6 +1127,26 @@ class MLP(nn.Module):
             return x
 
 
+def norm(x, dim=-1, eps=1e-5):
+    "standardize x"
+    return (x - x.mean(dim, keepdims=True)) / (x.std(dim, keepdims=True) + eps)
+
+
+class Decoder(torch.nn.Module):
+    def __init__(self, i, o, nl=2):
+        super().__init__()
+        h = o  # * 8
+        start = [nn.Linear(i, h)]
+        fat = [nn.Linear(h, h) for _ in range(nl)]
+        end = [nn.Linear(h, o)]
+        self.net = nn.Sequential(*(start + fat + end))
+
+    def forward(self, x):
+        x = self.net(x)
+        x = x.contiguous()
+        return x
+
+
 class SemiSupervisedTransducer(Transducer):
     def __init__(
         self,
@@ -1100,6 +1184,14 @@ class SemiSupervisedTransducer(Transducer):
             print("Contrastive Training with Wav2Vec2:")
             print(f" => Using '{name}' model")
             print(f" => Keeping {cut_at} attention layers")
+        if mode == "dapc+mr+contrastive":
+            self.w_c = 0.5
+            self.w_pi = 0.1
+            self.w_recon = 1.0
+            self.decoder = Decoder(hidden_sz, 768)
+            self.project = nn.Linear(hidden_sz, hidden_sz // 16, bias=False)
+            print("dapc+mr model")
+            print("  weights:", self.w_pi, self.w_recon)
         temps = 1 if modalities == 2 else 3
         self.temperature = nn.Parameter(torch.tensor([1.0 for _ in range(temps)]))
         self.cache_sz = cache_sz
@@ -1135,6 +1227,16 @@ class SemiSupervisedTransducer(Transducer):
                     self.temperature,
                     *[l.weight for l in self.latents],
                 ],
+            ]
+        elif self.mode == "dapc+mr+contrastive":
+            return [
+                encoder_prepro_params,
+                [
+                    self.temperature,
+                    *[l.weight for l in self.latents],
+                ],
+                list(self.decoder.parameters()),
+                list(self.project.parameters()),
             ]
         return [
             [
@@ -1290,7 +1392,8 @@ class SemiSupervisedTransducer(Transducer):
 
             # attention mask / mask for later
             attn_mask = (
-                torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+                torch.arange(x.size(1), dtype=xl.dtype, device=xl.device)[None, :]
+                < xl[:, None]
             )
 
             # assemble
@@ -1352,6 +1455,90 @@ class SemiSupervisedTransducer(Transducer):
         l2 = F.cross_entropy(sim.T, labels)
         return {"loss": (l1 + l2) / 2.0}
 
+    def forward_dapc_mr_contrastive(self, tpl, return_logits=False):
+        # unpack
+        x, y, xl, yl = tpl
+        N = x.size(0)
+
+        # create two differently augmented instances of x
+        xraw1, xl1, xmask1, _ = self.preprocessor.augment(x, xl)
+        xraw2, xl2, xmask2, _ = self.preprocessor.augment(x, xl)
+        x1 = xraw1 * xmask1
+        x2 = xraw2 * xmask2
+        xinv1 = norm(xraw1 * (1.0 - xmask1))
+        xinv2 = norm(xraw2 * (1.0 - xmask2))
+
+        # feed both through encoder
+        enc1 = self.encoder(x1, lengths=xl1)
+        enc2 = self.encoder(x2, lengths=xl2)
+        # r1, r2 = enc1, enc2
+        # T = r1.size(1)
+        # r1mask = (
+        #     torch.arange(T, dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+        # )
+        # r2mask = r1mask
+
+        # # reduce
+        # r1 = masked_mean(
+        #     r1, r1mask, dim=1, random=self.random_masking and self.training
+        # )
+        # r2 = masked_mean(
+        #     r2, r2mask, dim=1, random=self.random_masking and self.training
+        # )
+
+        # # project
+        # r1 = self.latents[0](r1)
+        # r2 = self.latents[1](r2)
+
+        # # normalize
+        # r1, r2 = map(lambda t: F.normalize(t, p=2, dim=-1), (r1, r2))
+
+        # # cache for later
+        # # and extend batch
+        # r1, r2 = self.cache_and_extend(r1, r2)
+        # N = r1.size(0)
+
+        # # contrastive loss
+        # temp = self.temperature.exp()
+        # sim = einsum("i d, j d -> i j", r1, r2) * temp
+        # labels = torch.arange(N, device=x.device)
+        # l1 = F.cross_entropy(sim, labels)
+        # l2 = F.cross_entropy(sim.T, labels)
+        # loss_contrastive = ((l1 + l2) / 2.0).mean()
+        loss_contrastive = torch.Tensor([0.0]).to(x.device)
+
+        # pi (dapc) loss
+        try:
+            encp1 = self.project(enc1)
+            encp2 = self.project(enc2)
+            loss_pi1, _ = pi_loss(encp1, xl1)
+            loss_pi2, _ = pi_loss(encp2, xl2)
+            loss_pi = (loss_pi1 + loss_pi2) / 2.0
+        except:
+            loss_pi = torch.Tensor([0.0]).to(x.device)
+
+        # reconstruction loss
+        dec1 = norm(self.decoder(enc1))
+        dec2 = norm(self.decoder(enc2))
+        lr1 = (((dec1 - xinv1) ** 2) * (1 - xmask1)).mean((1, 2))
+        lr2 = (((dec2 - xinv2) ** 2) * (1 - xmask2)).mean((1, 2))
+        loss_recon = ((lr1 + lr2) / 2.0).mean()
+
+        # full loss
+        a = self.w_c * loss_contrastive
+        b = self.w_pi * loss_pi
+        c = self.w_recon * loss_recon
+        loss = a + b + c
+        d = {
+            "loss": loss,
+            "loss_contrastive": a,
+            "loss_pi": b,
+            "loss_recon": c,
+        }
+        if return_logits:
+            return d, (xraw1, x1, enc1, dec1, xinv1, xmask1)
+        return d
+
     def forward(self, tpl, return_logits=False):
         """
         (x, y)
@@ -1359,15 +1546,15 @@ class SemiSupervisedTransducer(Transducer):
         y: N tuples (y_padded, y_lens)
         """
 
-        # special path for simsiam
         if self.mode == "simsiam":
             return self.forward_simsiam(tpl, return_logits=return_logits)
 
-        # special path for contrastive
+        if self.mode == "dapc+mr+contrastive":
+            return self.forward_dapc_mr_contrastive(tpl, return_logits=return_logits)
+
         if "contrastive" in self.mode:
             return self.forward_contrastive(tpl, return_logits=return_logits)
 
-        # no such method
         raise Exception(f"No such mode {self.mode}")
 
 
@@ -1477,38 +1664,3 @@ class ConformerEncoder(Module):
         if return_state:
             return x, state
         return x
-
-
-class TransformerPredictor(Module):
-    def __init__(
-        self,
-        vocab_sz,
-        embed_sz,
-        hidden_sz,
-        out_sz,
-        dropout=0.01,
-        num_layers=2,
-        blank=0,
-        use_tmp_state_pcent=0.9,
-        **kwargs,
-    ):
-        self.vocab_sz = vocab_sz
-        self.num_layers = num_layers
-        from x_transformers import TransformerWrapper, Encoder as XEncoder
-
-        self.transformer = model = TransformerWrapper(
-            num_tokens=vocab_sz,
-            max_seq_len=1024,
-            attn_layers=XEncoder(dim=hidden_sz, depth=num_layers, heads=8),  # 12
-        )
-        self.drop = nn.Dropout(dropout)
-        self.linear = nn.Linear(hidden_sz * 2, hidden_sz)
-
-    def param_groups(self):
-        return [p for p in self.parameters() if p.requires_grad]
-
-    def forward(self, x, state=None, lengths=None):
-        x = self.transformer(x)
-        x = self.drop(x)
-        x = self.linear(x)
-        return x, state

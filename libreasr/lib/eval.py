@@ -1,14 +1,6 @@
-from functools import partial
-
 from tqdm import tqdm
 from fastai.learner import Learner
 import numpy as np
-
-from matplotlib import pyplot as plt
-from fastai.torch_basics import *
-from fastai.data.all import *
-from fastai.callback.tracker import TrackerCallback
-from fastaudio.core.signal import AudioTensor
 
 from libreasr.lib.metrics import cer, wer
 from IPython.core.debugger import set_trace

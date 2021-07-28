@@ -5,7 +5,7 @@ import traceback
 import torch
 
 from fastai.learner import Callback, CancelBatchException
-from fastai.callback.fp16 import MixedPrecision
+from fastai.callback.fp16 import NativeMixedPrecision
 from fastai.torch_core import rank_distrib
 from fastai.distributed import DistributedTrainer, rank0_first
 
@@ -21,7 +21,7 @@ def maybe_clip_grad_norm(model, clip):
 
 class GradAccumCallback(Callback):
     count = 0
-    run_after = MixedPrecision
+    run_after = NativeMixedPrecision
 
     def __init__(self, num_batches, clip):
         self.num_batches = num_batches
@@ -118,14 +118,18 @@ class Rank0Wrapper(Callback):
                 setattr(self, f, wrapped)
 
 
-class EvalSpeechModel(Callback):
-    def __init__(self, ddp=False, tests_per_epoch=8, espm_kwargs={}):
+class EvaluatorCallback(Callback):
+    run_after = NativeMixedPrecision
+
+    def __init__(self, evaluator, ddp=False, tests_per_epoch=8, enable=True, **kwargs):
+        self.evaluator = evaluator
         self.ddp = ddp
         self.tests_per_epoch = tests_per_epoch
-        self.espm_kwargs = espm_kwargs
-        # self.learn.test = MethodType(eval_speech_model, self.learn)
+        self.kwargs = kwargs
         self.is_fitting = False
         self.train_batch_count = 0
+        self._back_to_train = True
+        self.enable = enable
 
     def get_writer(self):
         if hasattr(self.learn, "summary_writer"):
@@ -141,31 +145,46 @@ class EvalSpeechModel(Callback):
             if self.training:
                 self.train_batch_count += 1
 
-    def after_batch(self):
-        if self.tests_per_epoch <= 0:
+    def _pre(self):
+        self._back_to_train = self.learn.model.training
+        self.learn.model.eval()
+
+    def _post(self):
+        if self._back_to_train:
+            self.learn.model.train()
+
+    def after_loss(self):
+        if self.tests_per_epoch <= 0 or not self.enable:
             return
-        try:
-            if self.training:
-                a = self.learn.train_iter
-                b = int((self.n_iter * (1 / self.tests_per_epoch)))
-                if a % b == 0:
-                    metrics = eval_speech_model(
-                        self.learn, ddp=self.ddp, **self.espm_kwargs
+
+        def save_fn(fname, **kwargs):
+            self.save(fname, **kwargs)
+
+        if self.training:
+            a = self.learn.train_iter + 1
+            b = int((self.n_iter * (1 / self.tests_per_epoch)))
+            if a % b == 0:
+                self._pre()
+                metrics = []
+                try:
+                    metrics = self.evaluator.eval(
+                        self.learn, ddp=self.ddp, save_fn=save_fn, **self.kwargs
                     )
-                    i = self.train_batch_count
-                    for metric in metrics:
-                        w = self.get_writer()
-                        if w is not None:
-                            for k, v in metric.items():
-                                if "metrics" in k:
-                                    w.add_scalar(k, v, i)
-                                else:
-                                    w.add_text(k, v, i)
-                        i += 1
-        except Exception as e:
-            print("failed to execute eval_speech_model(...)")
-            print(e)
-            traceback.print_exc()
+                except Exception as e:
+                    print("failed to evaluate in EvaluatorCallback...")
+                    print(e)
+                    traceback.print_exc()
+                i = self.train_batch_count
+                for metric in metrics:
+                    w = self.get_writer()
+                    if w is not None:
+                        for k, v in metric.items():
+                            if "metrics" in k:
+                                w.add_scalar(k, v, i)
+                            else:
+                                w.add_text(k, v, i)
+                    i += 1
+                self._post()
 
     def after_fit(self):
         self.is_fitting = True
