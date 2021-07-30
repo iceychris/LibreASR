@@ -11,8 +11,6 @@ from fastai.distributed import DistributedTrainer, rank0_first
 
 from torch.utils.tensorboard import SummaryWriter
 
-from libreasr.lib.eval import eval_speech_model
-
 
 def maybe_clip_grad_norm(model, clip):
     if clip > 0.0:

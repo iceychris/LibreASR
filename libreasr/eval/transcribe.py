@@ -74,7 +74,7 @@ class TranscribeEvaluator(Evaluator):
                     utterance = to_device(X)
                     label = Y.detach().cpu().numpy().tolist()
 
-                    _pred, _metric = m.transcribe(utterance)
+                    _pred, _metric = m.transcribe(utterance, **kwargs)
                     _true = lang.denumericalize(label)
 
                     _metric = {"metrics/" + k: v for k, v in _metric.items()}

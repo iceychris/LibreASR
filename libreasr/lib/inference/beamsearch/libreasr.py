@@ -250,7 +250,8 @@ class Beamer(nn.Module):
         # print(self.t, enc.mean(), enc.std())
 
         # return all hypotheses
-        return [(x.tokens, x.score) for x in self.all]
+        #  with bos removed
+        return [x.tokens[1:] for x in self.all]
 
     @property
     def all(self):

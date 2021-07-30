@@ -14,12 +14,14 @@ MODEL_TEMP = 1.0
 # beam search
 DEFAULT_MAX_ITERS = 5
 DEFAULT_BEAM_SEARCH_OPTS = {
-    "implementation": "speechbrain",
-    "beam_width": 4,  # 2,
+    "implementation": "libreasr",
+    "beam_width": 2,
     "topk_next": 2,
     "predictor_cache_sz": 4,  # 128, # 1024,
     "joint_cache_sz": 4,  # 128, # 1024,
     "score_cache_sz": 4,  # 128, # 1024,
+    "state_beam": 2.3,
+    "expand_beam": 2.3,
     "debug": False,
 }
 

@@ -34,8 +34,8 @@ from libreasr.lib.defaults import (
 )
 from libreasr.lib.layers.encoders.slim import SlimEncoder
 from libreasr.modules.encoders import Wav2Vec2Encoder
-from libreasr.lib.inference.beamsearch.libreasr import (
-    start_rnnt_beam_search,
+from libreasr.lib.inference.beamsearch import (
+    Beamsearch,
 )
 from libreasr.modules.ssl import pi_loss
 
@@ -612,7 +612,7 @@ class RNNTLoss(Module):
         if aux_ctc:
             self.ctc_loss = nn.CTCLoss(zero_infinity=True)
 
-    def forward(self, x, y, xl, yl, ctc_out=None):
+    def forward(self, x, y, xl, yl, ctc_out=None, return_dict=True):
         # trim lens
         xl = torch.clamp(xl // self.reduction, min=1, max=x.size(1))
 
@@ -643,6 +643,54 @@ class RNNTLoss(Module):
             ctc_loss_value = self.ctc_loss(ctc_out, y, xl, yl)
             losses["ctc_loss"] = ctc_loss_value
             losses["loss"] = (rnnt_loss_value + ctc_loss_value) / 2.0
+        if return_dict:
+            return losses
+        return losses["loss"]
+
+
+class NoisyStudentLoss(Module):
+    def __init__(self, temp=1.0, beta=0.5, gamma=0.5):
+        self.temp = temp
+        self.beta = beta
+        self.gamma = gamma
+        self.rnnt_loss = RNNTLoss()
+        self.mse = torch.nn.MSELoss(reduction="none")
+
+    def _kd_loss(self, t, s, dim=-1, mul_temp=False):
+        p_t = F.softmax(t / self.temp, dim=dim)
+        p_s = F.log_softmax(s / self.temp, dim=dim)
+        kd_loss_value = F.kl_div(p_s, p_t, reduction="none").sum((1, 2, 3))
+        if mul_temp:
+            kd_loss_value *= self.temp ** 2
+        return kd_loss_value
+
+    def _l2_loss(self, e1, e2, dims=(1, 2)):
+        return self.mse(e1, e2).mean(dims)
+
+    def forward(self, x, y, xl, yl, t_logits, s_logits, t_e, s_e, **kwargs):
+        # dict of losses
+        losses = dict()
+
+        # rnnt loss
+        rnnt_logits = s_logits.log_softmax(dim=-1)
+        rnnt_loss_value = self.rnnt_loss(rnnt_logits, y, xl, yl, return_dict=False)
+        losses["rnnt_loss"] = rnnt_loss_value
+        losses["loss"] = rnnt_loss_value
+
+        # encoder l2 loss
+        l2_loss_value = self._l2_loss(t_e, s_e)
+        losses["l2_loss"] = l2_loss_value
+
+        # teacher student knowledge distillation loss
+        # kd_loss_value = self._kd_loss(t_logits, s_logits)
+        kd_loss_value = self._l2_loss(t_logits, s_logits, dims=(1, 2, 3))
+        losses["kd_loss"] = kd_loss_value
+
+        # sum up
+        losses["loss"] = (
+            rnnt_loss_value + self.gamma * l2_loss_value + self.beta * kd_loss_value
+        )
+
         return losses
 
 
@@ -801,7 +849,14 @@ class Transducer(Module):
         bos = bos.fill_(self.bos)
         return bos
 
-    def forward(self, tpl, softmax=True, return_logits=False):
+    def forward(
+        self,
+        tpl,
+        softmax=True,
+        return_logits=False,
+        calc_loss=True,
+        return_encoder=False,
+    ):
         """
         (x, y)
         x: N tuples (audios of shape [N, n_chans, seq_len, H], x_lens)
@@ -865,9 +920,13 @@ class Transducer(Module):
                 ctc_out, _ = self.ctc_head(raw_encoder_out)
 
         # calc loss
-        with self.ctx("loss"):
-            loss = self.loss(joint_out, y, xl, yl, ctc_out=ctc_out)
-        return loss
+        if calc_loss:
+            with self.ctx("loss"):
+                loss = self.loss(joint_out, y, xl, yl, ctc_out=ctc_out)
+            return loss
+        if return_encoder:
+            return joint_out, raw_encoder_out
+        return joint_out
 
     def transcribe_batch(
         self,
@@ -1043,6 +1102,7 @@ class Transducer(Module):
         pre_rb_sz=0,
         pre_rb_trim=0,
         beam_search_opts={},
+        **kwargs,
     ):
         "x must be of shape [C, T, H]"
 
@@ -1081,28 +1141,30 @@ class Transducer(Module):
 
         # initiate beam search
         beam_search_opts = defaults(beam_search_opts, DEFAULT_BEAM_SEARCH_OPTS)
+        impl = beam_search_opts["implementation"]
         blank, bos, lang = self.blank, self.bos, self.lang
         p, j = self.predictor, partial(
             self.joint, temp=temp_model, softmax=True, log=False
         )
         po, ps = h_t_pred, pred_state
         mi = max_iters
-        beamer = start_rnnt_beam_search(
-            beam_search_opts, blank, bos, lang, p, j, po, ps, mi
+        dev = encoder_out.device
+        beamer = Beamsearch(
+            impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev
         )
 
         # iterate through all timesteps
         for t, h_t_enc in enumerate(encoder_out):
 
             # advance
-            beamer(h_t_enc)
+            hyps = beamer(h_t_enc)
 
             # record how many iters we had
             extra["iters"].append(-1)
 
         # extract best hypothesis
         #  cut off BOS
-        y_seq = beamer.best.tokens[1:]
+        y_seq = hyps[0]
 
         # compute alignment score
         #  better if distributed along the sequence
@@ -1136,38 +1198,42 @@ class Dummy(Module):
 
 
 class NoisyStudent(Module):
-    def __init__(self, teacher, student):
-        self.teacher, self.student = [teacher], student
-        self.teacher[0].eval()
-        for param in self.teacher[0].parameters():
+    def __init__(self, teacher, student, **kwargs):
+        self.teacher, self.student = teacher, student
+        for param in self.teacher.parameters():
             param.requires_grad = False
+        self.loss = NoisyStudentLoss(**kwargs)
 
     def forward(self, tpl):
 
         # forward teacher
+        self.teacher.eval()
         with torch.no_grad():
-            t = self.teacher[0](tpl, softmax=False)
+            t, t_e = self.teacher(
+                tpl, softmax=False, calc_loss=False, return_encoder=True
+            )
 
         # apply noise
-        if self.training:
-            x = tpl[0]
-            dtype, dev, std = x.dtype, x.device, x.std()
-            tpl[0] += torch.randn(tpl[0].shape, dtype=dtype, device=dev) * std * 0.1
+        # if self.training:
+        #     x = tpl[0]
+        #     dtype, dev, std = x.dtype, x.device, x.std()
+        #     tpl[0] += torch.randn(tpl[0].shape, dtype=dtype, device=dev) * std * 0.1
 
         # forward student
-        s = self.student(tpl, softmax=False)
+        s, s_e = self.student(tpl, softmax=False, calc_loss=False, return_encoder=True)
 
-        return (t, s)
+        # calculate loss
+        return self.loss(*tpl, t, s, t_e, s_e)
 
     def param_groups(self):
-        return [
-            self.student.encoder.param_groups(),
-            self.student.predictor.param_groups(),
-            self.student.joint.param_groups(),
-        ]
+        return self.student.param_groups()
 
     def transcribe(self, *args, **kwargs):
         return self.student.transcribe(*args, **kwargs)
+
+    @property
+    def encoder(self):
+        return self.student.encoder
 
 
 class QuantizedTransducer(Transducer):

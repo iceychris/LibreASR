@@ -13,6 +13,7 @@ from libreasr.lib.defaults import (
 from libreasr.lib.lm import LMFuser
 from libreasr.lib.utils import defaults, nearest_multiple, TensorRingBuffer
 from libreasr.lib.inference.events import *
+from libreasr.lib.inference.beamsearch import Beamsearch
 
 
 def infer_stream(
@@ -142,28 +143,7 @@ def infer_stream(
     p, j = pre, partial(self.joint, temp=temp_model, softmax=True, log=False)
     po, ps = h_t_pred, predictor_state
     mi = max_iters
-    if impl.lower() == "libreasr":
-        from libreasr.lib.inference.beamsearch.libreasr import start_rnnt_beam_search
-
-        beamer = start_rnnt_beam_search(
-            beam_search_opts, blank, bos, lang, p, j, po, ps, mi
-        )
-    else:
-        from libreasr.lib.inference.beamsearch.speechbrain import TransducerBeamSearcher
-
-        beam_width = beam_search_opts.pop("beam_width")
-        beamer = TransducerBeamSearcher(
-            decode_network_lst=[pre],
-            tjoint=partial(j, softmax=False),
-            classifier_network=[],
-            blank_id=blank,
-            bos_id=bos,
-            beam_size=beam_width,
-            nbest=2,
-            lm_module=None,
-            lm_weight=0.0,
-        )
-        beamer.forward_init(bs=1, device=dev)
+    beamer = Beamsearch(impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev)
 
     # signal start
     yield StartEvent(beamer)
@@ -208,12 +188,7 @@ def infer_stream(
             h_enc = h_t_enc[..., j, :]
 
             # perform beam search step
-            if impl.lower() == "libreasr":
-                hyps = beamer(h_enc)
-                yield HypothesisEvent(hyps)
-            else:
-                hyps, scores, _, _ = beamer.forward_step(h_enc[None, None])
-                yield TranscriptEvent(lang.denumericalize(hyps[0]))
+            yield beamer(h_enc, return_event=True)
 
     # in case we haven't found any hypothesis
     yield StopEvent()
