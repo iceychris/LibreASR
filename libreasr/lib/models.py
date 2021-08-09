@@ -482,7 +482,9 @@ class Joint(Module):
         reversible=False,
         bias=True,
         act="tanh",
+        dropout=0.0,
     ):
+        assert dropout == 0.0, "No dropout in Joint"
         self.method = method
         self.reversible = reversible
         if reversible:
@@ -1150,7 +1152,19 @@ class Transducer(Module):
         mi = max_iters
         dev = encoder_out.device
         beamer = Beamsearch(
-            impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev
+            impl,
+            beam_search_opts,
+            blank,
+            bos,
+            lang,
+            p,
+            j,
+            po,
+            ps,
+            mi,
+            dev,
+            self.lm,
+            alpha,
         )
 
         # iterate through all timesteps

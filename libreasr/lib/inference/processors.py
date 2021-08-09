@@ -222,8 +222,6 @@ class EventDebugProcessor(InferenceProcessor):
 class TranscriptProcessor(InferenceProcessor):
     """
     Turns HypothesisEvent into TranscriptEvent.
-    To Do:
-    - don't emit event if last transcript is same
     """
 
     def __init__(self, denumericalizer, choose_best=True, blank=0, debug=False):
@@ -236,14 +234,9 @@ class TranscriptProcessor(InferenceProcessor):
     def on_event(self, event: InferenceEvent, bus: EventBus):
         if event.tag == EventTag.HYPOTHESIS:
             hyps = event.hyps
-            hyp = []
-            if self.choose_best:
-                hyp = sorted(hyps, key=lambda x: x[-1], reverse=True)[0]
-            else:
-                raise NotImplementedError()
 
-            # only tokens
-            transcript = hyp[0]
+            # best one == first one?
+            transcript = hyps[0]
 
             # no blanks
             transcript = list(filter(lambda x: x != self.blank, transcript))

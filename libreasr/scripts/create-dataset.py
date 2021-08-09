@@ -461,7 +461,7 @@ if __name__ == "__main__":
             else:
                 # spawn a pool
                 p = multiprocessing.Pool(args.workers)
-                return p.imap_unordered(function, files, 1024)
+                yield from p.imap_unordered(function, files, 64)
 
         # execute
         func = partial(

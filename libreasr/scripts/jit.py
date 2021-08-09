@@ -11,6 +11,7 @@ from torch.quantization import quantize_dynamic
 
 from libreasr import LibreASR
 from libreasr.jit import (
+    quantize,
     jittify_preprocessor,
     jittify_encoder,
     jittify_predictor,
@@ -27,10 +28,6 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("Boolean value expected.")
-
-
-def quantize(m):
-    return quantize_dynamic(m, {nn.LSTM, nn.Linear}, dtype=torch.qint8)
 
 
 if __name__ == "__main__":

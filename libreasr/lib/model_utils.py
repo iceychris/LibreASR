@@ -10,8 +10,6 @@ import torch
 
 from fastai.learner import load_model
 
-from libreasr.lib.quantization import load_quantized_model, try_quantize, quantize_model
-
 
 _PATH_ARCHIVE = Path("libreasr-model.tar.gz")
 _PATH_TOKENIZER = Path("tokenizer.yttm-model")
@@ -58,8 +56,6 @@ def load_asr_model(
     model,
     lang_name,
     lang,
-    pre_quantization,
-    post_quantization,
     paths,
     device="cpu",
     lm=None,
@@ -78,27 +74,16 @@ def load_asr_model(
     at = None
     try:
         print(f"Trying to load model from {paths}")
-        if pre_quantization:
-            at = str(paths)
-            model = load_quantized_model(model, lang, paths)
-            model = model.eval()
-        else:
-            at = Path(paths)
-            load_model(
-                at,
-                model,
-                None,
-                with_opt=False,
-                device=device,
-            )
+        at = Path(paths)
+        load_model(
+            at,
+            model,
+            None,
+            with_opt=False,
+            device=device,
+        )
     except Exception as e:
         print(f"Unable to load model ('{at}', '{name}')")
         print(" >", e)
-
-    # quantize model after loading
-    if post_quantization:
-        qmodel = try_quantize(model, quantize_model)
-        qmodel = qmodel.eval()
-        return qmodel
 
     return model

@@ -16,9 +16,7 @@ if __name__ == "__main__":
     if cmd == "serve":
         # start
         bridge = subprocess.Popen(["python3", "-m", "libreasr.api.bridge"])
-        server = subprocess.Popen(
-            ["python3", "-m", "libreasr.api.server", "--lang", "all"]
-        )
+        server = subprocess.Popen(["python3", "-m", "libreasr.api.server"])
 
         # block
         bridge.communicate()

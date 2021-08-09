@@ -219,24 +219,23 @@ def parse_and_apply_config(
         # check_db(db)
 
     # grab params
-    model_qpre = conf.get("quantization", {}).get("model", {}).get("pre", False)
-    model_qpost = conf.get("quantization", {}).get("model", {}).get("post", False)
-    model_path_to_load = "q" if model_qpre else "n"
+    model_path_to_load = "n"
     model_path = conf.get("model", {}).get("path", {}).get(model_path_to_load, "")
     if isinstance(model_path, list):
         model_path = [os.path.expanduser(x) for x in model_path]
     else:
         model_path = os.path.expanduser(model_path)
-    model_args = (model_qpre, model_qpost, model_path)
+    model_args = (model_path,)
     model_do_load = conf["model"].get("load", False)
-    lm_qpre = conf.get("quantization", {}).get("lm", {}).get("pre", False)
-    lm_qpost = conf.get("quantization", {}).get("lm", {}).get("post", False)
-    lm_path_to_load = "q" if lm_qpre else "n"
+    lm_path_to_load = "n"
     lm_path = os.path.expanduser(
         conf.get("lm", {}).get("path", {}).get(lm_path_to_load, "")
     )
-    lm_args = (lm_qpre, lm_qpost, lm_path)
+    lm_args = (lm_path,)
     lm_enable = conf["lm"].get("enable", False)
+
+    # post quantization
+    do_quantization = conf.get("quantization", {}).get("enable", True)
 
     # load lm
     lm = None
@@ -274,6 +273,12 @@ def parse_and_apply_config(
     if inference:
         # eval mode
         m.eval()
+
+        # quantize
+        if do_quantization:
+            from libreasr.jit.utils import quantize_model_safely
+
+            quantize_model_safely(m)
 
         return conf, lang, m, tfms
     else:

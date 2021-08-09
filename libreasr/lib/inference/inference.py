@@ -143,7 +143,9 @@ def infer_stream(
     p, j = pre, partial(self.joint, temp=temp_model, softmax=True, log=False)
     po, ps = h_t_pred, predictor_state
     mi = max_iters
-    beamer = Beamsearch(impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev)
+    beamer = Beamsearch(
+        impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev, self.lm, alpha
+    )
 
     # signal start
     yield StartEvent(beamer)

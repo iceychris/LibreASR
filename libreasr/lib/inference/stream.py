@@ -31,11 +31,13 @@ def transcribe_stream(
     ###
 
     stream_opts = update(DEFAULT_STREAM_OPTS, stream_opts)
-    assis, assis_kw, dbg_proc = (
+    assis, assis_kw, dbg_proc, chunk_sz = (
         stream_opts["assistant"],
         stream_opts["assistant_keywords"],
         stream_opts["debug"],
+        stream_opts["chunk_sz"],
     )
+    num_samples_per_frame = int(chunk_sz * sr)
     if assis:
         processors = [
             VADProcessor(sr=sr, debug=False),
@@ -61,6 +63,27 @@ def transcribe_stream(
 
     # tensorize
     gen = map(tensorize, gen)
+
+    # split up frame into multiple ones
+    #  if it's too large
+    def split(gen, num_samples_per_frame):
+        nspf = num_samples_per_frame
+        for frame in gen:
+            sz = frame.size(-1)
+            if sz > num_samples_per_frame:
+                # split up
+                fits = sz // nspf
+                for i in range(fits):
+                    cut = frame[:, i * nspf : (i + 1) * nspf]
+                    if cut.size(-1) == nspf:
+                        yield cut
+                    else:
+                        print("Warning: throwing away data!")
+                        print(f"{sz - fits} samples or {cut.size(-1)}")
+            else:
+                yield frame
+
+    gen = split(gen, num_samples_per_frame)
 
     # buffer n frames
     def buffer(gen, n_frames=stream_opts["buffer_n_frames"]):

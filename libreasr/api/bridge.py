@@ -3,13 +3,13 @@
 import os
 import time
 import sys
-import queue
 import logging
 import struct
 import yaml
 import json
-from threading import Thread
 from functools import partial
+import multiprocessing as mp
+from multiprocessing import Process, Queue
 
 import grpc
 import tornado.web
@@ -23,14 +23,15 @@ import libreasr.api.interfaces.libreasr_pb2_grpc as apg
 
 DUMP_AUDIO = False
 DEBUG = False
-GRPC_TIMEOUT = 5.0
+GRPC_TIMEOUT = 3.0
+TIMER_MILLIS = 100
 
 
 def log_print(*args, **kwargs):
     print("[api-bridge]", *args, **kwargs)
 
 
-def grpc_thread_func(lang, q_recv, q_send, chan="localhost:50051"):
+def grpc_process_func(lang, q_recv, q_send, chan="localhost:50051"):
     # connect
     log_print(f"gRPC connecting to {chan} (lang {lang})")
     with grpc.insecure_channel(chan) as channel:
@@ -41,6 +42,11 @@ def grpc_thread_func(lang, q_recv, q_send, chan="localhost:50051"):
             while True:
                 try:
                     itm = q_recv.get(timeout=GRPC_TIMEOUT)
+
+                    # build grpc representation
+                    data, sr, lang = itm
+                    itm = ap.Audio(data=data, sr=sr, lang=lang)
+
                     yield itm
                 except:
                     return
@@ -48,6 +54,12 @@ def grpc_thread_func(lang, q_recv, q_send, chan="localhost:50051"):
         # inference
         for event in stub.TranscribeStream(yielder()):
             log_print(event)
+
+            # convert to json
+            event = json_format.MessageToDict(event)
+            event = json.dumps(event)
+
+            # send back
             q_send.put(event)
         log_print("gRPC stopped")
 
@@ -72,16 +84,46 @@ class WebSocket(tornado.websocket.WebSocketHandler):
     def initialize(self, chan):
         self.chan = chan
         self.ready = lambda: False
+        self.timer = None
+        self.closed = False
 
-    def start_grpc_thread(self, lang):
-        # start grpc thread
-        q_recv, q_send = queue.SimpleQueue(), queue.SimpleQueue()
-        t = Thread(target=grpc_thread_func, args=(lang, q_recv, q_send, self.chan))
-        t.start()
+    def _timer_callback(self):
+        # check results
+        while self.q_send.qsize() > 0:
+            try:
+                event = self.q_send.get_nowait()
+            except:
+                continue
+
+            # reply to websocket peer
+            self.write_message(event)
+
+        # if the process is gone, stop the timer
+        #  and disconnect
+        if not self.ready():
+            self.stop_timer()
+
+    def start_timer(self):
+        self.timer = PeriodicCallback(self._timer_callback, TIMER_MILLIS)
+        self.timer.start()
+
+    def stop_timer(self):
+        if self.timer is not None and self.timer.is_running():
+            self.timer.stop()
+            self.timer = None
+        if not self.closed:
+            self.close()
+
+    def start_grpc_process(self, lang):
+        # start grpc process
+        q_recv, q_send = Queue(), Queue()
+        s = Process(target=grpc_process_func, args=(lang, q_recv, q_send, self.chan))
+        s.start()
         self.q_recv = q_recv
         self.q_send = q_send
-        self.ready = lambda: t.is_alive()
-        log_print("gRPC thread started")
+        self.ready = lambda: s.is_alive()
+        self.start_timer()
+        log_print("gRPC process started")
 
     def check_origin(self, origin):
         return True
@@ -99,6 +141,7 @@ class WebSocket(tornado.websocket.WebSocketHandler):
 
     def on_close(self):
         log_print("ws close")
+        self.closed = True
 
     def on_message(self, message):
         payload = message
@@ -124,26 +167,18 @@ class WebSocket(tornado.websocket.WebSocketHandler):
 
         # make sure we're ready
         if not self.ready():
-            self.start_grpc_thread(lang=lang)
+            self.start_grpc_process(lang=lang)
 
-        # on queue
+        # put on queue
+        #  to be consumed by grpc process
         q_recv = self.q_recv
-        q_send = self.q_send
-        q_recv.put_nowait(ap.Audio(data=data, sr=sr, lang=lang))
-
-        # check results
-        while q_send.qsize() > 0:
-            res = q_send.get_nowait()
-
-            # convert to json
-            obj = json_format.MessageToDict(res)
-            s = json.dumps(obj)
-
-            # reply
-            self.write_message(s)
+        q_recv.put_nowait((data, sr, lang))
 
 
 if __name__ == "__main__":
+
+    # use fork
+    mp.set_start_method("fork")
 
     # parse args
     import argparse

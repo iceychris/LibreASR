@@ -1,10 +1,8 @@
 import torch
-import torch.quantization
 import torch.nn as nn
 import torch.nn.functional as F
 
 from libreasr.lib.utils import standardize, try_eval
-from libreasr.lib.quantization import try_quantize, quantize_lm, load_quantized_lm
 from libreasr.lib.defaults import LM_ALPHA, LM_THETA, LM_TEMP, LM_DEBUG
 
 from IPython.core.debugger import set_trace
@@ -38,24 +36,21 @@ class LM(nn.Module):
             x = f(x / temp, dim=-1)
         return x, state
 
-    def quantization_fix(self):
-        self.__class__ = QuantizedLM
-
-
-class QuantizedLM(LM):
-    def eval(self):
-        self.train(False)
-        return self
-
-    def train(self, _):
-        try_eval(self)
-        return self
-
-    def to(self, _):
-        return self
-
-    def quantization_fix(self):
-        pass
+    def generate(self, prefix: str, lang, steps=64):
+        seq = []
+        x = lang.numericalize(prefix)
+        seq.extend(x)
+        x = torch.LongTensor(x)[None]
+        x, s = self(x)
+        x = x.argmax(-1)
+        seq.append(x[0][-1].item())
+        x = torch.LongTensor([[seq[-1]]])
+        for _ in range(steps):
+            x, s = self(x, s)
+            x = x[0][0].argmax(-1)
+            seq.append(x.item())
+            x = torch.LongTensor([[seq[-1]]])
+        return lang.denumericalize(seq)
 
 
 def masked_state_update(mask, state, new_state, device):
@@ -141,9 +136,7 @@ class LMFuserBatch(LMFuser):
         return joint_out, prob, pred
 
 
-def load_lm(
-    lm_conf, pre_quantization, post_quantization, lm_path, load=False, device="cpu"
-):
+def load_lm(lm_conf, lm_path, load=False, device="cpu"):
 
     # create model
     lm = LM(**lm_conf).to(device)
@@ -152,16 +145,8 @@ def load_lm(
 
     if load:
         # load lm
-        if pre_quantization:
-            lm = load_quantized_lm(lm, lm_path)
-        else:
-            lm.load_state_dict(torch.load(lm_path))
+        lm.load_state_dict(torch.load(lm_path))
         lm = lm.eval()
-
-        # quantize
-        if post_quantization and not pre_quantization:
-            lm = try_quantize(lm, quantize_lm)
-            lm = lm.eval()
         print("[lm] loaded.")
 
     return lm
