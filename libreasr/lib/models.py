@@ -484,7 +484,7 @@ class Joint(Module):
         act="tanh",
         dropout=0.0,
     ):
-        assert dropout == 0.0, "No dropout in Joint"
+        assert dropout == 0.0, "Dropout is not used in Joint"
         self.method = method
         self.reversible = reversible
         if reversible:
@@ -651,7 +651,7 @@ class RNNTLoss(Module):
 
 
 class NoisyStudentLoss(Module):
-    def __init__(self, temp=1.0, beta=0.5, gamma=0.5):
+    def __init__(self, temp=1.0, beta=1e-3, gamma=1e-3):
         self.temp = temp
         self.beta = beta
         self.gamma = gamma
@@ -1115,6 +1115,9 @@ class Transducer(Module):
             "outs": [],
         }
 
+        # move to correct device
+        x = x.to(self.device)
+
         # set model to eval mode
         self.eval()
 
@@ -1163,8 +1166,8 @@ class Transducer(Module):
             ps,
             mi,
             dev,
-            self.lm,
-            alpha,
+            lm=self.lm,
+            lm_weight=alpha,
         )
 
         # iterate through all timesteps

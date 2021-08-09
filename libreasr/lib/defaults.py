@@ -50,6 +50,9 @@ TORCH_NUM_CPU_THREADS = 4
 
 # example audio
 WAVS = [
+    # en
+    "./assets/samples/common_voice_en_22738408.wav",
+    # de
     "./assets/samples/common_voice_de_17672459.wav",
     "./assets/samples/common_voice_de_18227443.wav",
     "./assets/samples/common_voice_de_18520948.wav",

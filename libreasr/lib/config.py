@@ -126,10 +126,10 @@ def fix_config(conf):
 
 def fix_config_inference(conf, model_name, base="~/.cache/LibreASR"):
     # check if tokenizer path is correct
-    p = os.path.expanduser(conf["tokenizer"]["model_file"])
-    if not Path(p).exists():
-        p = f"{base}/{model_name}/tokenizer.yttm-model"
-        conf["tokenizer"]["model_file"] = p
+    p = f"{base}/{model_name}/tokenizer.yttm-model"
+    if not "tokenizer" in conf:
+        conf["tokenizer"] = {}
+    conf["tokenizer"]["model_file"] = p
 
     # make sure the model path is correct
     conf["model"]["load"] = True
@@ -233,20 +233,20 @@ def parse_and_apply_config(
     )
     lm_args = (lm_path,)
     lm_enable = conf["lm"].get("enable", False)
+    device = conf["cuda"]["device"]
 
     # post quantization
     do_quantization = conf.get("quantization", {}).get("enable", True)
 
     # load lm
     lm = None
-    dev = conf["cuda"]["device"]
     if lm_enable:
         try:
             lm = load_lm(
                 conf.get("lm", {}),
                 *lm_args,
                 load=conf["lm"].get("load", False),
-                device=dev,
+                device=device,
             )
         except Exception as e:
             print("[lm] Failed to load")
@@ -272,7 +272,8 @@ def parse_and_apply_config(
 
     if inference:
         # eval mode
-        m.eval()
+        #  and move model to device
+        m = m.to(device).eval()
 
         # quantize
         if do_quantization:

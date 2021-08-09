@@ -37,19 +37,20 @@ class LM(nn.Module):
         return x, state
 
     def generate(self, prefix: str, lang, steps=64):
+        device = next(self.parameters()).device
         seq = []
         x = lang.numericalize(prefix)
         seq.extend(x)
-        x = torch.LongTensor(x)[None]
+        x = torch.LongTensor(x)[None].to(device)
         x, s = self(x)
         x = x.argmax(-1)
         seq.append(x[0][-1].item())
-        x = torch.LongTensor([[seq[-1]]])
+        x = torch.LongTensor([[seq[-1]]]).to(device)
         for _ in range(steps):
             x, s = self(x, s)
             x = x[0][0].argmax(-1)
             seq.append(x.item())
-            x = torch.LongTensor([[seq[-1]]])
+            x = torch.LongTensor([[seq[-1]]]).to(device)
         return lang.denumericalize(seq)
 
 
@@ -141,12 +142,14 @@ def load_lm(lm_conf, lm_path, load=False, device="cpu"):
     # create model
     lm = LM(**lm_conf).to(device)
     lm.eval()
-    print("[lm] created.")
 
     if load:
         # load lm
         lm.load_state_dict(torch.load(lm_path))
         lm = lm.eval()
-        print("[lm] loaded.")
+        print("[load]", lm_path)
+
+    # shove over to device again?
+    lm = lm.to(device)
 
     return lm
