@@ -53,6 +53,11 @@ class LibreASR:
     def from_sb(*args, **kwargs):
         return LibreASR(*args, **kwargs)
 
+    @staticmethod
+    def example():
+        from libreasr.lib.defaults import WAVS
+        return WAVS[0]
+
 
 class LibreASRWrapper:
     def __init__(self, lang=None, config_path=None, **kwargs):

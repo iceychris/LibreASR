@@ -473,7 +473,7 @@ class TransducerBeamSearcher(torch.nn.Module):
             (e.g., RNN hidden states).
         """
         with torch.no_grad():
-            logits, hs = self.lm(inp_tokens, hx=memory)
+            logits, hs = self.lm(inp_tokens, memory, softmax=False)
             log_probs = self.softmax(logits)
         return log_probs, hs
 

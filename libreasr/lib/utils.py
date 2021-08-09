@@ -1,3 +1,4 @@
+import argparse
 import traceback
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -358,3 +359,14 @@ def warn_about_license(component: str, function: str, link: str):
     print(prefix, f"Using {function} in {component}...")
     print(prefix, f"Check its license: {link}")
     print(prefix, "*" * 64)
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")

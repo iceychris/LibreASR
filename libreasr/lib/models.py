@@ -482,7 +482,9 @@ class Joint(Module):
         reversible=False,
         bias=True,
         act="tanh",
+        dropout=0.0,
     ):
+        assert dropout == 0.0, "Dropout is not used in Joint"
         self.method = method
         self.reversible = reversible
         if reversible:
@@ -649,7 +651,7 @@ class RNNTLoss(Module):
 
 
 class NoisyStudentLoss(Module):
-    def __init__(self, temp=1.0, beta=0.5, gamma=0.5):
+    def __init__(self, temp=1.0, beta=1e-3, gamma=1e-3):
         self.temp = temp
         self.beta = beta
         self.gamma = gamma
@@ -1113,6 +1115,9 @@ class Transducer(Module):
             "outs": [],
         }
 
+        # move to correct device
+        x = x.to(self.device)
+
         # set model to eval mode
         self.eval()
 
@@ -1150,7 +1155,7 @@ class Transducer(Module):
         mi = max_iters
         dev = encoder_out.device
         beamer = Beamsearch(
-            impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev
+            impl, beam_search_opts, blank, bos, lang, p, j, po, ps, mi, dev, lm=self.lm, lm_weight=alpha
         )
 
         # iterate through all timesteps

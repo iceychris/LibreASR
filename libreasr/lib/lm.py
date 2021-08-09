@@ -38,6 +38,23 @@ class LM(nn.Module):
             x = f(x / temp, dim=-1)
         return x, state
 
+    def generate(self, prefix: str, lang, steps=64):
+        device = next(self.parameters()).device
+        seq = []
+        x = lang.numericalize(prefix)
+        seq.extend(x)
+        x = torch.LongTensor(x)[None].to(device)
+        x, s = self(x)
+        x = x.argmax(-1)
+        seq.append(x[0][-1].item())
+        x = torch.LongTensor([[seq[-1]]]).to(device)
+        for _ in range(steps):
+            x, s = self(x, s)
+            x = x[0][0].argmax(-1)
+            seq.append(x.item())
+            x = torch.LongTensor([[seq[-1]]]).to(device)
+        return lang.denumericalize(seq)
+
     def quantization_fix(self):
         self.__class__ = QuantizedLM
 
@@ -148,7 +165,6 @@ def load_lm(
     # create model
     lm = LM(**lm_conf).to(device)
     lm.eval()
-    print("[lm] created.")
 
     if load:
         # load lm
@@ -162,6 +178,9 @@ def load_lm(
         if post_quantization and not pre_quantization:
             lm = try_quantize(lm, quantize_lm)
             lm = lm.eval()
-        print("[lm] loaded.")
+        print("[load]", lm_path)
+
+    # shove over to device again?
+    lm = lm.to(device)
 
     return lm

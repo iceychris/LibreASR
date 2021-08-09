@@ -114,6 +114,7 @@ class TokenizedLanguage(Language):
         self.mf = model_file
 
         # load tokenizer
+        print("[load]", model_file)
         self.tokenizer = yttm.BPE(model=model_file)
 
     def numericalize(self, text, sos=False, dropout=0):

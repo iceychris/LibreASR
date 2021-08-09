@@ -77,7 +77,7 @@ def load_asr_model(
     name = model.__class__.__name__
     at = None
     try:
-        print(f"Trying to load model from {paths}")
+        print(f"[load] {paths}")
         if pre_quantization:
             at = str(paths)
             model = load_quantized_model(model, lang, paths)

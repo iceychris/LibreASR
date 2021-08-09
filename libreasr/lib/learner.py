@@ -215,9 +215,9 @@ class LibreASRLearner(Learner):
 
         # grab the correct evaluator
         if objective == "contrastive":
-            from libreasr.eval import LinearEvaluator
+            from libreasr.eval import SaveEvaluator
 
-            evaluator = LinearEvaluator(device=device)
+            evaluator = SaveEvaluator()
         elif objective == "rnnt":
             from libreasr.eval import TranscribeEvaluator
 

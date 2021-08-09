@@ -96,10 +96,11 @@ class PreNormJit(PreNorm):
 
 
 class LSTMWrapper(nn.Module):
-    def __init__(self, fn, idx):
+    def __init__(self, fn, idx, proj):
         super().__init__()
         self.fn = fn
         self.idx = idx
+        self.proj = proj
         self.state = None
 
     def forward(self, x, state=None, **kwargs):
@@ -108,6 +109,7 @@ class LSTMWrapper(nn.Module):
         else:
             s = None
         x, s = self.fn(x, s, **kwargs)
+        x = self.proj(x)
         self.state = s
         return x
 
@@ -124,6 +126,7 @@ class LSTMWrapperJit(LSTMWrapper):
         else:
             s = state[self.idx]
         xn, sn = self.fn(x, s)
+        xn = self.proj(xn)
         return xn, sn
 
 
@@ -144,6 +147,7 @@ class SlimEncoder(nn.Module):
         attention=False,
         use_tmp_state_pcent=0.9,
         reversible=False,
+        bidirectional=False,
         **kwargs,
     ):
         super().__init__()
@@ -164,12 +168,13 @@ class SlimEncoder(nn.Module):
         # initialize recurrent layers
         dim = hidden_sz
         self.dim = dim
-        lstm = partial(nn.LSTM, dim, dim, batch_first=True, num_layers=1)
+        lstm = partial(nn.LSTM, dim, dim, batch_first=True, num_layers=1, bidirectional=bidirectional)
+        proj = partial(nn.Linear, dim * 2, dim) if bidirectional else partial(nn.Sequential)
         layers = []
         for ind in range(num_layers):
             layers.extend(
                 [
-                    LayerScale(dim, ind + 1, PreNorm(dim, LSTMWrapper(lstm(), ind))),
+                    LayerScale(dim, ind + 1, PreNorm(dim, LSTMWrapper(lstm(), ind, proj()))),
                 ]
             )
         execute_type = ResidualSequence
