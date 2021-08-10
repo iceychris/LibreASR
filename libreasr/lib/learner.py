@@ -330,6 +330,7 @@ class LibreASRLearner(Learner):
         )
         learn.extra_cbs = extra_cbs
         learn.conf = conf
+        learn.lang_name = lang_name
         if mp:
             learn = learn.to_native_fp16()
             print("NativeMixedPrecision activated.")
