@@ -86,6 +86,7 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         self.ready = lambda: False
         self.timer = None
         self.closed = False
+        self.info = {}
 
     def _timer_callback(self):
         # check results
@@ -143,26 +144,18 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         log_print("ws close")
         self.closed = True
 
-    def on_message(self, message):
-        payload = message
+    def _handle_json(self, message, payload):
+        decoded = json.loads(payload)
+        self.info = decoded
 
-        # print
-        if DEBUG:
-            sys.stderr.write(f"recv: {len(payload)} bytes\n")
-            sys.stderr.flush()
+    def _handle_data(self, message, payload):
+        # grab info 
+        lang = self.info.get("modelId", "en")
+        sr = self.info.get("sr", 16000)
 
-        ## decode
-        # lang
-        lang = payload[:4].decode("ascii").strip()
-        payload = payload[4:]
-        # sr
-        unp = struct.unpack("f", payload[:4])
-        sr = int(unp[0])
-        payload = payload[4:]
-        # data
-        data = payload
+        # dump to stdout
         if DUMP_AUDIO:
-            sys.stdout.buffer.write(data)
+            sys.stdout.buffer.write(payload)
             sys.stdout.flush()
 
         # make sure we're ready
@@ -172,7 +165,23 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         # put on queue
         #  to be consumed by grpc process
         q_recv = self.q_recv
-        q_recv.put_nowait((data, sr, lang))
+        q_recv.put_nowait((payload, sr, lang))
+
+    def on_message(self, message):
+
+        # print
+        if DEBUG:
+            sys.stderr.write(f"recv: {len(payload)} bytes\n")
+            sys.stderr.flush()
+
+        # check message type
+        #  by websocket data type
+        payload = message
+        if isinstance(message, str):
+            self._handle_json(message, payload)
+        else:
+            self._handle_data(message, payload)
+
 
 
 if __name__ == "__main__":

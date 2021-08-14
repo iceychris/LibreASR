@@ -17,6 +17,8 @@ export function concatenate(resultConstructor, ...arrays) {
 
 window.socket = null;
 window.audioData = Float32Array.of();
+window.infoSent = false;
+
 export function transcribe(data, lang, sr, cb) {
     window.socket.onmessage = function (evt) {
         console.log("websocket response:", evt.data)
@@ -25,20 +27,22 @@ export function transcribe(data, lang, sr, cb) {
     window.audioData = concatenate(Float32Array, window.audioData, data);
     const sendables = grabStreamableAudioData(sr);
 
-    // extra info
-    var langBuf = new ArrayBuffer(4);
-    var view = new DataView(langBuf);
-    lang = lang + "  ";
-    [...lang].reverse().forEach((b, i) => {
-        view.setUint8(i, b.charCodeAt(0));
-    });
-    lang = view.getFloat32(0);
+    // send extra info first
+    if (!window.infoSent) {
+        const info = {
+            sr: sr,
+            modelId: lang,
+        }
+        const s = JSON.stringify(info);
+        window.socket.send(s);
+        window.infoSent = true;
+    }
 
+    // then, start transcribing
     for (let i = 0; i < sendables.length; i++) {
         const one = sendables[i];
         // console.log(`[${i}] ws sending ${one.length / sr} secs`);
-        const info = concatenate(Float32Array, Float32Array.of(lang), Float32Array.of(sr))
-        const blob = concatenate(Float32Array, info, one);
+        const blob = concatenate(Float32Array, one, Float32Array.of([]));
         window.socket.send(blob);
     }
 }
