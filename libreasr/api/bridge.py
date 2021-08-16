@@ -153,6 +153,12 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         lang = self.info.get("modelId", "en")
         sr = self.info.get("sr", 16000)
 
+        # fix websocket client sending strings
+        #  instead of binary data...
+        if isinstance(payload, str):
+            payload = payload.split(",")
+            payload = bytes(map(lambda x: int(x), payload))
+
         # dump to stdout
         if DUMP_AUDIO:
             sys.stdout.buffer.write(payload)
@@ -177,7 +183,7 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         # check message type
         #  by websocket data type
         payload = message
-        if isinstance(message, str):
+        if isinstance(message, str) and message[0] == "{":
             self._handle_json(message, payload)
         else:
             self._handle_data(message, payload)
