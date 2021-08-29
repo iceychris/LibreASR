@@ -1,4 +1,5 @@
 import argparse
+import copy
 import traceback
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -29,14 +30,33 @@ def warn(msg, hard=False):
             pass
 
 
-def update(d, u):
+def update(d, u, deepcpy=False):
     "from: https://stackoverflow.com/questions/3232943/update-value-of-a-nested-dictionary-of-varying-depth"
+    if deepcpy:
+        d = copy.deepcopy(d)
     for k, v in u.items():
-        if isinstance(v, Mapping):
-            d[k] = update(d.get(k, {}), v)
-        else:
-            d[k] = v
+        try:
+            if isinstance(v, Mapping):
+                d[k] = update(d.get(k, {}), v)
+            else:
+                d[k] = v
+        except Exception as e:
+            print(d, u, k, v)
+            print(e)
+            raise e
     return d
+
+
+def dot(s):
+    def inner(d):
+        nonlocal s
+        s = s.split(".")
+        res = d
+        for x in s:
+            res = res[x]
+        return res
+
+    return inner
 
 
 def defaults(d, default_val):

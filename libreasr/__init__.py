@@ -4,6 +4,7 @@ LibreASR source code
 from importlib import import_module
 import gc
 import math
+from pathlib import Path
 
 import numpy as np
 
@@ -30,11 +31,19 @@ def get_instance(model_name, **kwargs):
 
 class LibreASR:
     def __new__(cls, model_name=None, auto=False, wrap=False, **kwargs):
+
+        # some automatic configuration
         if auto:
             return LibreASRWrapper.auto(**kwargs)
+
         assert model_name is not None, "Model name or language code required"
-        if wrap:
+
+        # a relative or absolute path
+        #  or we want to wrap
+        if model_name.startswith((".", "/")) or wrap:
             return LibreASRWrapper(model_name, **kwargs)
+
+        # get some other class
         return get_instance(model_name, **kwargs)
 
     @staticmethod
@@ -65,6 +74,12 @@ class LibreASRWrapper:
         """
         Create a new LibreASR instace for a specific language
         """
+
+        # paths
+        if lang.startswith((".", "/")):
+            config_path = str(Path(lang) / "config.yaml")
+            lang = None
+
         self.lang = lang
         self.config_path = config_path
         self.kwargs = kwargs

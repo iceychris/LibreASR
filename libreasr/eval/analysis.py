@@ -95,10 +95,19 @@ class Analysis:
         ns = len(self.results) - 1
         first_g = self.results[0]["text/ground_truth"]
         first_p = self.results[0]["text/prediction"]
+        wer_higher_than_one = len(
+            list(
+                filter(
+                    lambda x: x >= 1.0,
+                    map(lambda x: x["metrics/wer"], self.results[:-1]),
+                )
+            )
+        )
         print(f"\nSummary:\n")
         print("CER:", self.cer())
         print("WER:", self.wer())
-        print("Evaluated on # samples:", ns)
+        print("Evaluated on # samples: ", ns)
+        print("# samples with WER >= 1:", wer_higher_than_one)
         print("First ground truth:", first_g)
         print("First prediction:  ", first_p)
         print("kwargs:", self.kwargs)

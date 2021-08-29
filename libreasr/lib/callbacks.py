@@ -259,10 +259,16 @@ class Tensorboard(Callback):
         for name, param in self.model.named_parameters():
 
             # prepare tensor
+            if not param.requires_grad:
+                continue
             param = func(param)
             if param is None:
                 continue
-            m, s = param.mean().item(), param.std().item()
+            m, s, n = (
+                param.mean().item(),
+                param.std().item(),
+                (param.norm(2) ** 0.5).item(),
+            )
 
             # save hist
             if hist:
@@ -275,6 +281,8 @@ class Tensorboard(Callback):
             self.writer.add_scalar(tag, m, self.train_batch_count)
             tag = f"debugging-{title}-std/{name}"
             self.writer.add_scalar(tag, s, self.train_batch_count)
+            tag = f"debugging-{title}-norm/{name}"
+            self.writer.add_scalar(tag, n, self.train_batch_count)
 
     def after_step(self):
         if self.steps % LOG_EVERY_N_STEPS == 0:

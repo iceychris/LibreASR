@@ -149,7 +149,7 @@ class WebSocket(tornado.websocket.WebSocketHandler):
         self.info = decoded
 
     def _handle_data(self, message, payload):
-        # grab info 
+        # grab info
         lang = self.info.get("modelId", "en")
         sr = self.info.get("sr", 16000)
 
@@ -187,7 +187,6 @@ class WebSocket(tornado.websocket.WebSocketHandler):
             self._handle_json(message, payload)
         else:
             self._handle_data(message, payload)
-
 
 
 if __name__ == "__main__":

@@ -32,8 +32,11 @@ from libreasr.lib.defaults import (
     DEFAULT_MAX_ITERS,
     DEFAULT_BEAM_SEARCH_OPTS,
 )
-from libreasr.lib.layers.encoders.slim import SlimEncoder
-from libreasr.modules.encoders import Wav2Vec2Encoder
+from libreasr.modules.encoders import (
+    SlimEncoder,
+    LinearTransformerEncoder,
+    Wav2Vec2Encoder,
+)
 from libreasr.lib.inference.beamsearch import (
     Beamsearch,
 )
@@ -457,21 +460,6 @@ class PredictorJit(Predictor):
         return x, new_states
 
 
-class InnerJoint(Module):
-    def __init__(self, i, h, v):
-        self.net = nn.Sequential(
-            nn.Linear(i, h),
-            nn.Tanh(),
-            nn.Linear(h, v),
-        )
-
-    def param_groups(self):
-        return [p for p in self.parameters() if p.requires_grad]
-
-    def forward(self, x):
-        return self.net(x)
-
-
 class Joint(Module):
     def __init__(
         self,
@@ -479,49 +467,37 @@ class Joint(Module):
         joint_sz,
         vocab_sz,
         method,
+        arch="regular",
         reversible=False,
         bias=True,
         act="tanh",
         dropout=0.0,
     ):
         assert dropout == 0.0, "Dropout is not used in Joint"
+        assert not reversible
         self.method = method
         self.reversible = reversible
-        if reversible:
-            import memcnn
-
-            inv_joint = memcnn.AdditiveCoupling(
-                Fm=InnerJoint(out_sz // 2, joint_sz // 2, vocab_sz // 2),
-                Gm=InnerJoint(out_sz // 2, joint_sz // 2, vocab_sz // 2),
-                split_dim=3,
-            )
-            assert memcnn.is_invertible_module(
-                inv_joint, test_input_shape=(4, 3, 2, out_sz)
-            )
-            inv_joint = memcnn.InvertibleModuleWrapper(
-                fn=inv_joint, keep_input=False, keep_input_inverse=False
-            )
-            assert memcnn.is_invertible_module(
-                inv_joint, test_input_shape=(4, 3, 2, out_sz)
-            )
-            self.joint = inv_joint
+        if act == "tanh":
+            activation = nn.Tanh()
+        elif act == "relu":
+            activation = nn.ReLU()
         else:
-            # less memory usage
-            # self.joint = nn.Sequential(
-            #     nn.Tanh(),
-            #     nn.Linear(out_sz, vocab_sz),
-            # )
-            # custom LibreASR
-            if act == "tanh":
-                act = nn.Tanh()
-            elif act == "relu":
-                act = nn.ReLU()
-            else:
-                raise Exception(f"No such activation '{act}'")
+            raise Exception(f"No such activation '{act}'")
+
+        # custom LibreASR
+        if arch == "regular":
             self.joint = nn.Sequential(
                 nn.Linear(out_sz, joint_sz, bias=bias),
-                act,
+                activation,
                 nn.Linear(joint_sz, vocab_sz, bias=bias),
+            )
+
+        # less memory heavy?
+        elif arch == "slim":
+            assert act == "relu", "Only ReLU supported for Joint with arch=slim"
+            self.joint = nn.Sequential(
+                activation,
+                nn.Linear(out_sz, vocab_sz, bias=bias),
             )
 
     def to_jit(self):
@@ -591,11 +567,21 @@ class JointJit(Joint):
 
 
 def get_model(conf, *args, **kwargs):
-    if conf.get("training", {}).get("noisystudent", False):
-        teacher = eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
-        ns = NoisyStudent(teacher, Transducer.from_config(conf, *args, **kwargs))
+    clazz = eval(conf["model"]["name"])
+    conf_ns = conf.get("training", {}).get("noisystudent", {})
+    use_noisystudent = conf_ns.get("enable", False)
+    if use_noisystudent:
+        ovr = conf_ns.get("overrides", {})
+        conf_overrides_t = ovr.get("teacher", {})
+        conf_overrides_s = ovr.get("student", {})
+        conf_teacher = update(conf, conf_overrides_t, deepcpy=True)
+        conf_student = update(conf, conf_overrides_s, deepcpy=True)
+        teacher = clazz.from_config(conf_teacher, *args, **kwargs)
+        student = clazz.from_config(conf_student, *args, **kwargs)
+        extra = conf_ns.get("extra", {})
+        ns = NoisyStudent(teacher, student, **extra)
         return ns
-    return eval(conf["model"]["name"]).from_config(conf, *args, **kwargs)
+    return clazz.from_config(conf, *args, **kwargs)
 
 
 class RNNTLoss(Module):
@@ -604,10 +590,12 @@ class RNNTLoss(Module):
     with auxiliary CTC loss
     """
 
-    def __init__(self, aux_ctc=False, reduction=1.0, zero_nan=False):
+    def __init__(self, gather=True, aux_ctc=False, reduction=1.0, zero_nan=False):
         from warp_rnnt import rnnt_loss
 
-        self.rnnt_loss = partial(rnnt_loss, average_frames=False, fastemit_lambda=0.002)
+        self.rnnt_loss = partial(
+            rnnt_loss, average_frames=False, gather=gather, fastemit_lambda=0.002
+        )
         self.reduction = reduction
         self.zero_nan = zero_nan
         self.aux_ctc = aux_ctc
@@ -651,14 +639,37 @@ class RNNTLoss(Module):
 
 
 class NoisyStudentLoss(Module):
-    def __init__(self, temp=1.0, beta=1e-3, gamma=1e-3):
+    def __init__(self, temp=1.0, beta=1e-3, gamma=1e-3, use_mse=True, shift=0):
         self.temp = temp
         self.beta = beta
         self.gamma = gamma
+        self.use_mse = use_mse
+        self.shift = shift
         self.rnnt_loss = RNNTLoss()
         self.mse = torch.nn.MSELoss(reduction="none")
 
-    def _kd_loss(self, t, s, dim=-1, mul_temp=False):
+    def _gather_one(self, x, labels, blank=0):
+        N, T, U, V = x.size()
+        index = torch.full([N, T, U, 2], blank, device=labels.device, dtype=torch.long)
+        index[:, :, : U - 1, 1] = labels.unsqueeze(dim=1)
+        x = x.gather(dim=3, index=index)
+        return x
+
+    def _gather(self, t, s, labels, blank=0):
+        t = self._gather_one(t, labels, blank=blank)
+        s = self._gather_one(s, labels, blank=blank)
+        return t, s
+
+    def _shift(self, t, s):
+        if self.shift == 0:
+            return t, s
+        N, _, U, V = s.shape
+        s = s[:, self.shift :]
+        pad = torch.zeros((N, self.shift, U, V), dtype=s.dtype, device=s.device)
+        s = torch.cat([s, pad], dim=1)
+        return t, s
+
+    def _kd_kldiv_loss(self, t, s, dim=-1, mul_temp=False):
         p_t = F.softmax(t / self.temp, dim=dim)
         p_s = F.log_softmax(s / self.temp, dim=dim)
         kd_loss_value = F.kl_div(p_s, p_t, reduction="none").sum((1, 2, 3))
@@ -680,12 +691,17 @@ class NoisyStudentLoss(Module):
         losses["loss"] = rnnt_loss_value
 
         # encoder l2 loss
-        l2_loss_value = self._l2_loss(t_e, s_e)
-        losses["l2_loss"] = l2_loss_value
+        # l2_loss_value = self._l2_loss(t_e, s_e)
+        # losses["l2_loss"] = l2_loss_value
+        l2_loss_value = 0.0
 
         # teacher student knowledge distillation loss
-        # kd_loss_value = self._kd_loss(t_logits, s_logits)
-        kd_loss_value = self._l2_loss(t_logits, s_logits, dims=(1, 2, 3))
+        t_logits, s_logits = self._gather(t_logits, s_logits, labels=y)
+        t_logits, s_logits = self._shift(t_logits, s_logits)
+        if self.use_mse:
+            kd_loss_value = self._l2_loss(t_logits, s_logits, dims=(1, 2, 3))
+        else:
+            kd_loss_value = self._kd_kldiv_loss(t_logits, s_logits)
         losses["kd_loss"] = kd_loss_value
 
         # sum up
@@ -1754,63 +1770,6 @@ class SemiSupervisedTransducer(Transducer):
             return self.forward_contrastive(tpl, return_logits=return_logits)
 
         raise Exception(f"No such mode {self.mode}")
-
-
-class LinearTransformerEncoder(Module):
-    def __init__(
-        self,
-        feature_sz,
-        hidden_sz,
-        out_sz,
-        dropout=0.01,
-        num_layers=6,
-        trace=True,
-        device="cuda:0",
-        use_tmp_state_pcent=0.9,
-        **kwargs,
-    ):
-        self.num_layers = num_layers
-        self.input_norm = nn.LayerNorm(feature_sz)
-        self.pre_proj = nn.Linear(feature_sz, hidden_sz)
-        from fast_transformers.builders import (
-            TransformerEncoderBuilder,
-            RecurrentEncoderBuilder,
-        )
-        from fast_transformers.utils import make_mirror
-        from fast_transformers.masking import TriangularCausalMask
-
-        n_heads = 16
-        params = dict(
-            attention_type="causal-linear",
-            n_layers=num_layers,
-            n_heads=n_heads,
-            feed_forward_dimensions=hidden_sz,
-            query_dimensions=hidden_sz // n_heads,
-            value_dimensions=hidden_sz // n_heads,
-        )
-        self.transformer = TransformerEncoderBuilder.from_dictionary(params).get()
-        self.recurrent_transformer = RecurrentEncoderBuilder.from_dictionary(
-            params
-        ).get()
-        make_mirror(self.transformer, self.recurrent_transformer)
-        self.tcm = TriangularCausalMask
-        self.post_proj = nn.Linear(hidden_sz, out_sz)
-
-    def param_groups(self):
-        return [p for p in self.parameters() if p.requires_grad]
-
-    def forward(self, x, state=None, lengths=None, return_state=False):
-        x = x.reshape((x.size(0), x.size(1), -1))
-        x = self.input_norm(x)
-        x = self.pre_proj(x)
-        if state is None:
-            x = self.transformer(x, attn_mask=self.tcm(x.size(0), device=x.device))
-        else:
-            raise NotImplementedError("recurrent transformer not implemented")
-        x = self.post_proj(x)
-        if return_state:
-            return x, state
-        return x
 
 
 class ConformerEncoder(Module):

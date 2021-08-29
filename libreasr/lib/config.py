@@ -29,6 +29,7 @@ def open_config(*args, path="./config/testing.yaml", **kwargs):
         p = Path(p)
         if not os.path.exists(p):
             p = ".." / p
+        print("[load]", p)
         with open(p, "r") as stream:
             try:
                 obj = yaml.safe_load(stream)
@@ -154,10 +155,7 @@ def fix_transforms(conf, inference=False):
                 l.remove(t)
 
 
-def parse_and_apply_config(
-    *args, inference=False, lang="", path=None, config_hook=lambda x: None, **kwargs
-):
-
+def prepare_config(inference, lang, path, config_hook=lambda x: None, *args, **kwargs):
     # download pretrained models
     if inference and path is None:
         lang, release, config_path = download_all(lang)
@@ -172,7 +170,6 @@ def parse_and_apply_config(
     overrides = []
     if inference:
         overrides.append(["overrides", "inference"])
-    lang_name = lang
     if lang is not None and len(lang) > 0:
         overrides.append(["overrides", "languages", lang])
     conf = apply_overrides(conf, overrides, silent=True)
@@ -185,6 +182,16 @@ def parse_and_apply_config(
 
     # apply hook
     config_hook(conf)
+    return conf
+
+
+def parse_and_apply_config(
+    *args, inference=False, lang="", path=None, config_hook=lambda x: None, **kwargs
+):
+
+    # load & prepare config
+    conf = prepare_config(inference, lang, path, config_hook)
+    lang_name = lang
 
     # torch-specific cuda settings
     apply_cuda_stuff(conf)

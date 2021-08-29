@@ -210,7 +210,7 @@ class LibreASRLearner(Learner):
         cbs = [
             CudaCallback(),
             TerminateOnNaNCallback(),
-            # ReduceLROnPlateau(patience=1, min_lr=1e-5, factor=1.5),
+            ReduceLROnPlateau(patience=2, min_lr=1e-6),
         ]
 
         # grab the correct evaluator
