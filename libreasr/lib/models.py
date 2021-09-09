@@ -569,7 +569,10 @@ class JointJit(Joint):
 def get_model(conf, *args, **kwargs):
     clazz = eval(conf["model"]["name"])
     conf_ns = conf.get("training", {}).get("noisystudent", {})
-    use_noisystudent = conf_ns.get("enable", False)
+    try:
+        use_noisystudent = conf_ns.get("enable", False)
+    except:
+        use_noisystudent = False
     if use_noisystudent:
         ovr = conf_ns.get("overrides", {})
         conf_overrides_t = ovr.get("teacher", {})

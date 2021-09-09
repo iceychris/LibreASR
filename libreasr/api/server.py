@@ -20,12 +20,18 @@ from libreasr import LibreASR
 WORKERS = 4
 EXECUTER = futures.ThreadPoolExecutor
 
+# model settings
+TRANSLATION_MODEL = "m2m_100_418M"
+TRANSLATION_MAX_MODELS = 1
+
 
 def log_print(*args, **kwargs):
     print("[api-server]", *args, **kwargs)
 
 
 def get_cached_libreasr_instance(cache, lang):
+    if lang == "":
+        return None
     if lang in cache:
         return cache[lang]
     l = LibreASR(lang)
@@ -38,6 +44,12 @@ class LibreASRServicer(apg.LibreASRServicer):
         self.cache = {}
         for l in languages:
             get_cached_libreasr_instance(self.cache, l)
+
+        from easynmt import EasyNMT
+
+        self.translator = EasyNMT(
+            TRANSLATION_MODEL, max_loaded_models=TRANSLATION_MAX_MODELS
+        )
 
     def Transcribe(self, request, context):
 
@@ -80,6 +92,13 @@ class LibreASRServicer(apg.LibreASRServicer):
             if event.tag in (EventTag.TRANSCRIPT, EventTag.SENTENCE):
                 yield event.to_protobuf()
         log_print(f"... done.")
+
+    def Translate(self, request, context):
+        src, tgt, text = request.src, request.tgt, request.text
+
+        text = self.translator.translate(text, source_lang=src, target_lang=tgt)
+
+        return ap.Text(src=src, tgt=tgt, text=text)
 
 
 def serve(languages, port="[::]:50051"):

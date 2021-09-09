@@ -23,7 +23,7 @@ import libreasr.api.interfaces.libreasr_pb2_grpc as apg
 
 DUMP_AUDIO = False
 DEBUG = False
-GRPC_TIMEOUT = 3.0
+GRPC_TIMEOUT = 5.0
 TIMER_MILLIS = 100
 
 
@@ -31,37 +31,56 @@ def log_print(*args, **kwargs):
     print("[api-bridge]", *args, **kwargs)
 
 
-def grpc_process_func(lang, q_recv, q_send, chan="localhost:50051"):
-    # connect
-    log_print(f"gRPC connecting to {chan} (lang {lang})")
-    with grpc.insecure_channel(chan) as channel:
-        log_print("gRPC connected")
-        stub = apg.LibreASRStub(channel)
+def with_grpc_api(chan="localhost:50051"):
+    def wrap(f):
+        def inner(*args, **kwargs):
+            log_print(f"gRPC connecting to {chan}...")
+            conn = grpc.insecure_channel(chan)
+            with conn as channel:
+                stub = apg.LibreASRStub(channel)
+                log_print("gRPC connected.")
+                return f(stub, *args, **kwargs)
 
-        def yielder():
-            while True:
-                try:
-                    itm = q_recv.get(timeout=GRPC_TIMEOUT)
+        return inner
 
-                    # build grpc representation
-                    data, sr, lang = itm
-                    itm = ap.Audio(data=data, sr=sr, lang=lang)
+    return wrap
 
-                    yield itm
-                except:
-                    return
 
-        # inference
-        for event in stub.TranscribeStream(yielder()):
-            log_print(event)
+@with_grpc_api()
+def grpc_transcribe_stream(stub, lang, q_recv, q_send):
+    log_print(f"grpc_transcribe_stream (lang {lang})")
 
-            # convert to json
-            event = json_format.MessageToDict(event)
-            event = json.dumps(event)
+    def yielder():
+        while True:
+            try:
+                itm = q_recv.get(timeout=GRPC_TIMEOUT)
 
-            # send back
-            q_send.put(event)
-        log_print("gRPC stopped")
+                # build grpc representation
+                data, sr, lang = itm
+                itm = ap.Audio(data=data, sr=sr, lang=lang)
+
+                yield itm
+            except:
+                return
+
+    # inference
+    for event in stub.TranscribeStream(yielder()):
+        log_print(event)
+
+        # convert to json
+        event = json_format.MessageToDict(event)
+        event = json.dumps(event)
+
+        # send back
+        q_send.put(event)
+    log_print("gRPC stopped")
+
+
+@with_grpc_api()
+def grpc_translate(stub, src, tgt, text):
+    result = stub.Translate(ap.Text(src=src, tgt=tgt, text=text))
+    src, tgt, text = result.src, result.tgt, result.text
+    return src, tgt, text
 
 
 class APIHandler(tornado.web.RequestHandler):
@@ -75,9 +94,43 @@ class APIHandler(tornado.web.RequestHandler):
         self.set_header("Content-Type", "application/json")
         self.set_header("Access-Control-Allow-Origin", "*")
 
-    def get(self):
-        raw = json.dumps(self.langs)
-        self.write(raw)
+    async def get(self, path, *args, **kwargs):
+
+        # info
+        if path == "":
+            raw = json.dumps(self.langs)
+            self.write(raw)
+
+        else:
+            self.set_status(404)
+            self.finish("{}")
+
+    async def post(self, path, *args, **kwargs):
+
+        # transcription API
+        if path == "/transcribe":
+            self.set_status(404)
+            self.finish("{}")
+
+        # translation API
+        elif path == "/translate":
+            src, tgt, text = map(
+                lambda x: self.get_argument(x, ""), ["src", "tgt", "text"]
+            )
+            if src != "" and tgt != "" and text != "":
+                src, tgt, text = grpc_translate(src, tgt, text)
+            else:
+                print("/translate empty")
+            res = {
+                "src": src,
+                "tgt": tgt,
+                "text": text,
+            }
+            self.write(res)
+
+        else:
+            self.set_status(404)
+            self.finish("{}")
 
 
 class WebSocket(tornado.websocket.WebSocketHandler):
@@ -118,7 +171,7 @@ class WebSocket(tornado.websocket.WebSocketHandler):
     def start_grpc_process(self, lang):
         # start grpc process
         q_recv, q_send = Queue(), Queue()
-        s = Process(target=grpc_process_func, args=(lang, q_recv, q_send, self.chan))
+        s = Process(target=grpc_transcribe_stream, args=(lang, q_recv, q_send))
         s.start()
         self.q_recv = q_recv
         self.q_send = q_send
@@ -218,7 +271,7 @@ if __name__ == "__main__":
     # start http/websocket server
     opts = {"chan": args.grpc_host}
     handlers = [
-        (r"/api", APIHandler, opts),
+        (r"/api(.*)", APIHandler, opts),
         (r"/websocket", WebSocket, opts),
         (
             r"/(.*)",

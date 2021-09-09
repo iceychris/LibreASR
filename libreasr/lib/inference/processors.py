@@ -235,16 +235,21 @@ class TranscriptProcessor(InferenceProcessor):
         if event.tag == EventTag.HYPOTHESIS:
             hyps = event.hyps
 
-            # best one == first one?
-            transcript = hyps[0]
+            if hyps is not None:
+                # best one == first one?
+                transcript = hyps[0]
 
-            # no blanks
-            transcript = list(filter(lambda x: x != self.blank, transcript))
+                # no blanks
+                transcript = list(filter(lambda x: x != self.blank, transcript))
+                if len(transcript) > 1:
+                    transcript = self.denumericalizer(transcript[1:])
+                else:
+                    transcript = ""
 
-            if len(transcript) > 1:
-                transcript = self.denumericalizer(transcript[1:])
             else:
-                transcript = ""
+                transcript = event.transcript
+
+            # only send out TranscriptEvent once
             if transcript != self.last_transcript:
                 self.last_transcript = transcript
                 bus.emit(TranscriptEvent(transcript))

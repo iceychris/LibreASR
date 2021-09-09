@@ -53,13 +53,12 @@ class Beamsearch:
     def _mk_event(self, hyps):
         from libreasr.lib.inference.events import (
             HypothesisEvent,
-            TranscriptEvent,
         )
 
         if self.impl.lower() == "libreasr":
             return HypothesisEvent(hyps)
         else:
-            return TranscriptEvent(self.lang.denumericalize(hyps[0]))
+            return HypothesisEvent(transcript=self.lang.denumericalize(hyps[0]))
 
     def _dispatch(self, h_enc):
         if self.impl.lower() == "libreasr":

@@ -5,6 +5,7 @@ package LibreASR;
 service LibreASR {
   rpc Transcribe(Audio) returns (Transcript) {}
   rpc TranscribeStream(stream Audio) returns (stream Event) {}
+  rpc Translate(Text) returns (Text) {}
 }
 
 message Audio {
@@ -32,4 +33,8 @@ message Event {
   }
 }
 
-
+message Text {
+  string src = 1;
+  string tgt = 2;
+  string text = 3;
+}

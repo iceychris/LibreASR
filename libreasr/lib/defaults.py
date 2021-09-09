@@ -80,6 +80,7 @@ AUDIOS = list(zip(WAVS, LABELS))
 #  pretrained models
 ALIASES = {
     "de": "libreasr/de-1.1.0",
+    "es": "libreasr/es-1.1.0",
     "en": "libreasr/en-1.1.0",
 }
 
@@ -88,41 +89,59 @@ DOWNLOADS = {
     "libreasr/de-1.1.0": {
         "config.yaml": {
             "storage": "gdrive",
-            "id": "1VhC8oBcMgh-yP9PvMbteVIDGous-aVy_",
+            "src": "1VhC8oBcMgh-yP9PvMbteVIDGous-aVy_",
             # "sha256": "535a9984d10bccbad61838ca45f850e04c2a665a5546cd34cf16cb2a6de8bfcc",
             "sha256": "SKIP",
         },
         "tokenizer.yttm-model": {
             "storage": "gdrive",
-            "id": "1y2LDx4iTAI3-_mzevmbR-nGtZXiMwfCa",
+            "src": "1y2LDx4iTAI3-_mzevmbR-nGtZXiMwfCa",
             "sha256": "f035dd0c245a169cdca919394b1637861fc8d73da3203ff6e18c1a131f473af6",
         },
         "model.pth": {
             "storage": "gdrive",
-            "id": "19LrGnj8DLbCw5BlabfuTUPmXYc0jzSdD",
+            "src": "19LrGnj8DLbCw5BlabfuTUPmXYc0jzSdD",
             "sha256": "460a20f0c97302d86d0b1ffa01b952279dba3e409e71a564a69400e37cac0a6f",
             "wandb": "20cirnro",
         },
         "lm.pth": {
             "storage": "gdrive",
-            "id": "1Ba74YKDwx4qusRS1SMnKrz-SQr5Ity3p",
+            "src": "1Ba74YKDwx4qusRS1SMnKrz-SQr5Ity3p",
             "sha256": "e010207c6ec871dc310c27432188e38a6ac983837903e96b6c974d956d1acf49",
+        },
+    },
+    "libreasr/es-1.1.0": {
+        "config.yaml": {
+            "storage": "file",
+            "src": "/libreasr/LibreASR/LibreASR/1.1.0/es/config.yaml",
+            "sha256": "SKIP",
+        },
+        "tokenizer.yttm-model": {
+            "storage": "file",
+            "src": "/libreasr/LibreASR/LibreASR/1.1.0/es/tokenizer.yttm-model",
+            "sha256": "SKIP",
+        },
+        "model.pth": {
+            "storage": "file",
+            "src": "/libreasr/LibreASR/LibreASR/1.1.0/es/model.pth",
+            "sha256": "SKIP",
+            "wandb": "20cirnro",
         },
     },
     "libreasr/en-1.1.0": {
         "config.yaml": {
             "storage": "gdrive",
-            "id": "1pOQOgKjlv70PIN-gTSk50GBrN89sS5V1",
+            "src": "1pOQOgKjlv70PIN-gTSk50GBrN89sS5V1",
             "sha256": "b351afde976381a96d2a346b7b0ba94b097129f7b845ddea480a26941bb59cc5",
         },
         "tokenizer.yttm-model": {
             "storage": "gdrive",
-            "id": "1Njjp75rjfS341oKhw9Ale0HA4z8E9otR",
+            "src": "1Njjp75rjfS341oKhw9Ale0HA4z8E9otR",
             "sha256": "f11dcff85225eaf4ef5c590ba7169f491fc31cde024989d8be36f8b3af1aca1e",
         },
         "model.pth": {
             "storage": "gdrive",
-            "id": "1RPrKkdoOLS55Sa_dWtT87FGRGHms6Lha",
+            "src": "1RPrKkdoOLS55Sa_dWtT87FGRGHms6Lha",
             "sha256": "0ba28243783453f5039edb95862b9ee023b5b08a9ae473d5426340dc85bbe2a4",
             "wandb": "3eaqlb1s",
         },
@@ -148,6 +167,12 @@ LASR_MODELS = {
     "de": {
         "id": "libreasr/de-1.1.0",
         "tested-on": "common-voice-de-test",
+        "wer": -1.0,
+        "stream": True,
+    },
+    "es": {
+        "id": "libreasr/es-1.1.0",
+        "tested-on": "common-voice-es-valid",
         "wer": -1.0,
         "stream": True,
     },
