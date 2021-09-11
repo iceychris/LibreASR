@@ -61,12 +61,18 @@ class SilenceEvent(InferenceEvent):
 
 
 class HypothesisEvent(InferenceEvent):
-    def __init__(self, hyps):
+    def __init__(self, hyps=None, transcript=""):
         super().__init__(EventTag.HYPOTHESIS)
         self.hyps = hyps
+        self.transcript = transcript
 
     def __repr__(self):
-        return f"<{self.__class__.__name__} hyps={len(self.hyps)} {self.hyps[0][0]}>"
+        if self.hyps is None:
+            return f"<{self.__class__.__name__} transcript={self.transcript}>"
+        else:
+            return (
+                f"<{self.__class__.__name__} hyps={len(self.hyps)} {self.hyps[0][0]}>"
+            )
 
 
 class WakewordEvent(InferenceEvent):

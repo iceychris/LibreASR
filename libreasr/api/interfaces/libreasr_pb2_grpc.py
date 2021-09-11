@@ -24,6 +24,11 @@ class LibreASRStub(object):
             request_serializer=libreasr__pb2.Audio.SerializeToString,
             response_deserializer=libreasr__pb2.Event.FromString,
         )
+        self.Translate = channel.unary_unary(
+            "/LibreASR.LibreASR/Translate",
+            request_serializer=libreasr__pb2.Text.SerializeToString,
+            response_deserializer=libreasr__pb2.Text.FromString,
+        )
 
 
 class LibreASRServicer(object):
@@ -41,6 +46,12 @@ class LibreASRServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def Translate(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_LibreASRServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -53,6 +64,11 @@ def add_LibreASRServicer_to_server(servicer, server):
             servicer.TranscribeStream,
             request_deserializer=libreasr__pb2.Audio.FromString,
             response_serializer=libreasr__pb2.Event.SerializeToString,
+        ),
+        "Translate": grpc.unary_unary_rpc_method_handler(
+            servicer.Translate,
+            request_deserializer=libreasr__pb2.Text.FromString,
+            response_serializer=libreasr__pb2.Text.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -113,6 +129,35 @@ class LibreASR(object):
             "/LibreASR.LibreASR/TranscribeStream",
             libreasr__pb2.Audio.SerializeToString,
             libreasr__pb2.Event.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+        )
+
+    @staticmethod
+    def Translate(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/LibreASR.LibreASR/Translate",
+            libreasr__pb2.Text.SerializeToString,
+            libreasr__pb2.Text.FromString,
             options,
             channel_credentials,
             insecure,

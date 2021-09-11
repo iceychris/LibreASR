@@ -18,7 +18,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
     syntax="proto3",
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
-    serialized_pb=b'\n\x0elibreasr.proto\x12\x08LibreASR"/\n\x05\x41udio\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\n\n\x02sr\x18\x02 \x01(\x05\x12\x0c\n\x04lang\x18\x03 \x01(\t"\x1a\n\nTranscript\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\t"%\n\x0fTranscriptEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"#\n\rSentenceEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"b\n\x05\x45vent\x12\'\n\x02te\x18\x01 \x01(\x0b\x32\x19.LibreASR.TranscriptEventH\x00\x12%\n\x02se\x18\x02 \x01(\x0b\x32\x17.LibreASR.SentenceEventH\x00\x42\t\n\x07\x63ontent2}\n\x08LibreASR\x12\x35\n\nTranscribe\x12\x0f.LibreASR.Audio\x1a\x14.LibreASR.Transcript"\x00\x12:\n\x10TranscribeStream\x12\x0f.LibreASR.Audio\x1a\x0f.LibreASR.Event"\x00(\x01\x30\x01\x62\x06proto3',
+    serialized_pb=b'\n\x0elibreasr.proto\x12\x08LibreASR"/\n\x05\x41udio\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\n\n\x02sr\x18\x02 \x01(\x05\x12\x0c\n\x04lang\x18\x03 \x01(\t"\x1a\n\nTranscript\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\t"%\n\x0fTranscriptEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"#\n\rSentenceEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"b\n\x05\x45vent\x12\'\n\x02te\x18\x01 \x01(\x0b\x32\x19.LibreASR.TranscriptEventH\x00\x12%\n\x02se\x18\x02 \x01(\x0b\x32\x17.LibreASR.SentenceEventH\x00\x42\t\n\x07\x63ontent".\n\x04Text\x12\x0b\n\x03src\x18\x01 \x01(\t\x12\x0b\n\x03tgt\x18\x02 \x01(\t\x12\x0c\n\x04text\x18\x03 \x01(\t2\xac\x01\n\x08LibreASR\x12\x35\n\nTranscribe\x12\x0f.LibreASR.Audio\x1a\x14.LibreASR.Transcript"\x00\x12:\n\x10TranscribeStream\x12\x0f.LibreASR.Audio\x1a\x0f.LibreASR.Event"\x00(\x01\x30\x01\x12-\n\tTranslate\x12\x0e.LibreASR.Text\x1a\x0e.LibreASR.Text"\x00\x62\x06proto3',
 )
 
 
@@ -292,6 +292,85 @@ _EVENT = _descriptor.Descriptor(
     serialized_end=279,
 )
 
+
+_TEXT = _descriptor.Descriptor(
+    name="Text",
+    full_name="LibreASR.Text",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    create_key=_descriptor._internal_create_key,
+    fields=[
+        _descriptor.FieldDescriptor(
+            name="src",
+            full_name="LibreASR.Text.src",
+            index=0,
+            number=1,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.FieldDescriptor(
+            name="tgt",
+            full_name="LibreASR.Text.tgt",
+            index=1,
+            number=2,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.FieldDescriptor(
+            name="text",
+            full_name="LibreASR.Text.text",
+            index=2,
+            number=3,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[],
+    serialized_start=281,
+    serialized_end=327,
+)
+
 _EVENT.fields_by_name["te"].message_type = _TRANSCRIPTEVENT
 _EVENT.fields_by_name["se"].message_type = _SENTENCEEVENT
 _EVENT.oneofs_by_name["content"].fields.append(_EVENT.fields_by_name["te"])
@@ -303,6 +382,7 @@ DESCRIPTOR.message_types_by_name["Transcript"] = _TRANSCRIPT
 DESCRIPTOR.message_types_by_name["TranscriptEvent"] = _TRANSCRIPTEVENT
 DESCRIPTOR.message_types_by_name["SentenceEvent"] = _SENTENCEEVENT
 DESCRIPTOR.message_types_by_name["Event"] = _EVENT
+DESCRIPTOR.message_types_by_name["Text"] = _TEXT
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 Audio = _reflection.GeneratedProtocolMessageType(
@@ -360,6 +440,17 @@ Event = _reflection.GeneratedProtocolMessageType(
 )
 _sym_db.RegisterMessage(Event)
 
+Text = _reflection.GeneratedProtocolMessageType(
+    "Text",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _TEXT,
+        "__module__": "libreasr_pb2"
+        # @@protoc_insertion_point(class_scope:LibreASR.Text)
+    },
+)
+_sym_db.RegisterMessage(Text)
+
 
 _LIBREASR = _descriptor.ServiceDescriptor(
     name="LibreASR",
@@ -368,8 +459,8 @@ _LIBREASR = _descriptor.ServiceDescriptor(
     index=0,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
-    serialized_start=281,
-    serialized_end=406,
+    serialized_start=330,
+    serialized_end=502,
     methods=[
         _descriptor.MethodDescriptor(
             name="Transcribe",
@@ -388,6 +479,16 @@ _LIBREASR = _descriptor.ServiceDescriptor(
             containing_service=None,
             input_type=_AUDIO,
             output_type=_EVENT,
+            serialized_options=None,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.MethodDescriptor(
+            name="Translate",
+            full_name="LibreASR.LibreASR.Translate",
+            index=2,
+            containing_service=None,
+            input_type=_TEXT,
+            output_type=_TEXT,
             serialized_options=None,
             create_key=_descriptor._internal_create_key,
         ),

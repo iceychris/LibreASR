@@ -1,7 +1,9 @@
 import os
 import hashlib
+from pathlib import Path
 
 import requests
+import shutil
 from tqdm import tqdm
 
 from libreasr.lib.defaults import ALIASES, DOWNLOADS
@@ -21,8 +23,9 @@ def check_hash(path, sha256):
     return h.hexdigest() == sha256
 
 
-def download(id, sha256, path, storage="gdrive", **kwargs):
+def download(src, sha256, path, storage="gdrive", **kwargs):
     if storage == "gdrive":
+        id = src
         if not os.path.exists(path) or not check_hash(path, sha256):
             head, tail = os.path.split(path)
             os.makedirs(head, exist_ok=True)
@@ -58,6 +61,14 @@ def download(id, sha256, path, storage="gdrive", **kwargs):
             # recheck hash
             if not check_hash(path, sha256):
                 raise Exception("WARNING: SHA256-Hash mismatch for file " + path)
+    elif storage == "file":
+        try:
+            os.makedirs(Path(path).parent)
+        except:
+            pass
+        shutil.copy(src, path)
+    else:
+        raise Exception(f"No code to download from {storage}")
 
 
 def get_lang_and_release(lang):
