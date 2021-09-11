@@ -20,7 +20,6 @@ from libreasr import LibreASR
 EXECUTER = futures.ThreadPoolExecutor
 
 # model settings
-TRANSLATION_MODEL = "m2m_100_418M"
 TRANSLATION_MAX_MODELS = 1
 
 
@@ -39,16 +38,24 @@ def get_cached_libreasr_instance(cache, lang):
 
 
 class LibreASRServicer(apg.LibreASRServicer):
-    def __init__(self, languages):
+    def __init__(self, languages, translation_model):
         self.cache = {}
         for l in languages:
             get_cached_libreasr_instance(self.cache, l)
 
+        # defer loading translation model
+        #  on first use
+        self.translation_model_name = translation_model
+        self.translation_models = {}
+
+    def translator(self, model_name):
         from easynmt import EasyNMT
 
-        self.translator = EasyNMT(
-            TRANSLATION_MODEL, max_loaded_models=TRANSLATION_MAX_MODELS
-        )
+        if model_name not in self.translation_models:
+            self.translation_models[model_name] = EasyNMT(
+                model_name, max_loaded_models=TRANSLATION_MAX_MODELS
+            )
+        return self.translation_models[model_name]
 
     def Transcribe(self, request, context):
 
@@ -95,16 +102,20 @@ class LibreASRServicer(apg.LibreASRServicer):
     def Translate(self, request, context):
         src, tgt, text = request.src, request.tgt, request.text
 
-        text = self.translator.translate(text, source_lang=src, target_lang=tgt)
+        text = self.translator(self.translation_model_name).translate(
+            text, source_lang=src, target_lang=tgt
+        )
 
         return ap.Text(src=src, tgt=tgt, text=text)
 
 
-def serve(languages, port="[::]:50051", workers=4):
+def serve(languages, port="[::]:50051", workers=4, translation_model="m2m_100_418M"):
 
     # bring up server
     server = grpc.server(EXECUTER(max_workers=workers))
-    apg.add_LibreASRServicer_to_server(LibreASRServicer(languages), server)
+    apg.add_LibreASRServicer_to_server(
+        LibreASRServicer(languages, translation_model=translation_model), server
+    )
 
     # start gRPC server
     log_print("gRPC server starting on", port)
@@ -133,6 +144,11 @@ if __name__ == "__main__":
         default="[::]:50051",
         help="gRPC port to listen on",
     )
+    parser.add_argument(
+        "--translation-model",
+        default="m2m_100_418M",
+        help="Default EasyNMT translation model to use",
+    )
     args = parser.parse_args()
     cache = args.cache.lower()
     logging.basicConfig()
@@ -143,4 +159,9 @@ if __name__ == "__main__":
         ls = LANGUAGES
     else:
         ls = args.cache.lower().split(",")
-    serve(ls, port=args.grpc_port, workers=args.grpc_workers)
+    serve(
+        ls,
+        port=args.grpc_port,
+        workers=args.grpc_workers,
+        translation_model=args.translation_model,
+    )

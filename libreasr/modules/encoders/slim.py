@@ -150,7 +150,8 @@ class AdapterWrapper(nn.Module):
         assert lengths is not None
         xl = lengths
         mask = (
-            torch.arange(x.size(1), dtype=xl.dtype, device=xl.device)[None, :] < xl[:, None]
+            torch.arange(x.size(1), dtype=xl.dtype, device=xl.device)[None, :]
+            < xl[:, None]
         )
         x = self.adapter(x, input_mask=mask, **kwargs)
         return x
@@ -220,12 +221,22 @@ class SlimEncoder(nn.Module):
         adapters = []
         if adapters_enable:
             from libreasr.lib.layers.dual import DualModeMultiHeadSelfAttention
+
             if adapters_type == "attn":
-                inner = partial(DualModeMultiHeadSelfAttention, dim, 4, residual=False, window_size=16, autopad=True)
+                inner = partial(
+                    DualModeMultiHeadSelfAttention,
+                    dim,
+                    4,
+                    residual=False,
+                    window_size=16,
+                    autopad=True,
+                )
             else:
                 raise NotImplementedError("No such adapter type " + adapters_type)
             for ind in range(num_layers):
-                adapters.append(LayerScale(dim, ind + 1, PreNorm(dim, AdapterWrapper(inner()))))
+                adapters.append(
+                    LayerScale(dim, ind + 1, PreNorm(dim, AdapterWrapper(inner())))
+                )
 
         # build regular layers
         layers = []
