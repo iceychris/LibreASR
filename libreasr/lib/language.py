@@ -1,6 +1,7 @@
-import torch
-
 import string
+import pickle
+
+import torch
 
 import youtokentome as yttm
 
@@ -9,6 +10,15 @@ import youtokentome as yttm
 # - fill: mark start and end tokens, rest is space
 # - words: mark words with w
 TASK = "normal"
+
+# other
+TOKENIZER_MODEL_FILE = "tmp/tokenizer.yttm-model"
+CORPUS_FILE = "tmp/corpus.txt"
+
+
+def noop(ret=list):
+    def inner(*args, **kwargs):
+        return ret()
 
 
 class Language:
@@ -108,14 +118,60 @@ class Language:
         self.get_token(idx)
 
 
-class TokenizedLanguage(Language):
-    def __init__(self, *args, model_file="tmp/tokenizer.yttm-model", **kwargs):
-        super().__init__(*args, **kwargs)
+class BPETokenizer(Language):
+    def __init__(
+        self,
+        tokens,
+        data_fn=noop(),
+        model_file="tmp/tokenizer.yttm-model",
+        vocab_sz=4096,
+        **kwargs,
+    ):
+        super().__init__(tokens, **kwargs)
+        self.data_fn = data_fn
         self.mf = model_file
+        self.vocab_sz = vocab_sz
 
         # load tokenizer
-        print("[load]", model_file)
-        self.tokenizer = yttm.BPE(model=model_file)
+        try:
+            self.tokenizer = yttm.BPE(model=model_file)
+            print("[load]", model_file)
+        except:
+            self.tokenizer = self.train()
+            print("[create]", model_file)
+
+    def train(
+        self,
+        corpus_file=CORPUS_FILE,
+        dump_labels=True,
+    ):
+        import youtokentome as yttm
+
+        # grab settings
+        vocab_sz = self.vocab_sz
+        model_file = self.mf
+
+        # first we need to dump labels
+        if dump_labels:
+            self.data_fn(as_list=False, to_file=corpus_file)
+
+        # train model
+        print("Training yttm model...")
+        yttm.BPE.train(data=corpus_file, vocab_size=vocab_sz, model=model_file)
+        print("Done.")
+
+        # load model (for testing)
+        print("Testing yttm model...")
+        bpe = yttm.BPE(model=model_file)
+        # Two types of tokenization
+        test_text = "Are you freakin' crazy?"
+        encoded1 = bpe.encode([test_text], output_type=yttm.OutputType.ID)
+        encoded2 = bpe.encode([test_text], output_type=yttm.OutputType.SUBWORD)
+        decoded = bpe.decode(encoded1)
+        print(encoded1)
+        print(encoded2)
+        print(decoded)
+        return bpe
 
     def numericalize(self, text, sos=False, dropout=0):
         text = text.lower()
@@ -152,21 +208,88 @@ class TokenizedLanguage(Language):
         return str((bpe.vocab()[:5], "...", bpe.vocab()[-5:], len(self)))
 
 
+class CharTokenizer(Language):
+    def __init__(
+        self,
+        tokens,
+        data_fn=noop(),
+        model_file="tmp/tokenizer.yttm-model",
+        vocab_sz=32,
+        **kwargs,
+    ):
+        super().__init__(tokens, **kwargs)
+        self.mf = model_file
+
+        # load tokenizer
+        try:
+            self.vocab = pickle.load(open(model_file, "rb"))
+            print("[load]", model_file, len(self.vocab))
+            print(self.vocab)
+        except:
+            data = data_fn()
+            assert not len(data) == 0
+            text = "".join(data)
+            vocab = set(text)
+            m = max(tokens.values())
+            for i, c in enumerate(vocab):
+                tokens[c] = m + i + 1
+            self.vocab = tokens
+            pickle.dump(self.vocab, open(model_file, "wb"))
+            print("[create]", model_file, len(self.vocab))
+            print(self.vocab)
+
+        # compute inverse
+        self.t2i = self.vocab
+        self.i2t = {i: t for (t, i) in self.vocab.items()}
+
+    def numericalize(self, text, sos=False, dropout=0):
+        res = []
+        for c in text:
+            res.append(self.t2i.get(c, None))
+        res = list(filter(lambda x: x is not None, res))
+        return res
+
+    def denumericalize(self, nummed, strip_zeros=True):
+        res = []
+        if not isinstance(nummed, list):
+            nummed = [nummed]
+        for n in nummed:
+            if strip_zeros and n == 0:
+                continue
+            res.append(self.i2t.get(n, None))
+        res = list(filter(lambda x: x is not None, res))
+        return "".join(res)
+
+    def get_idx(self, tok):
+        return self.numericalize(tok)[0]
+
+    def get_token(self, num, strip_zeros=False):
+        return self.denumericalize(num)[0]
+
+    def __len__(self):
+        return len(self.vocab)
+
+    def __repr__(self):
+        return f"<CharTokenizer {str(self.vocab)[:32]}...>"
+
+
 def get_language(
-    tokens=["<BLK>", "<s>", "</s>", "<UNK>", " ", ".", "!", "?", ",", "'", "-"],
-    cls=TokenizedLanguage,
-    **kwargs
+    tokens=["<BLK>", "<s>", "<BOS>", "<UNK>"], type="bpe", data_fn=noop(), **kwargs
 ):
 
     # create dictionary
     tokens = dict(zip(tokens, range(len(tokens))))
-    possible_chars = string.ascii_lowercase  # + string.digits#  + string.punctuation
-    tokens.update(
-        {_char: len(tokens) + _idx for (_idx, _char) in enumerate(possible_chars)}
-    )
+
+    # select class
+    if type == "bpe":
+        cls = BPETokenizer
+    elif type == "char":
+        cls = CharTokenizer
+    else:
+        raise Exception(f"No tokenizer '{type}' implemented")
 
     # create a language
-    lang = cls(tokens, **kwargs)
+    lang = cls(tokens, data_fn, **kwargs)
     vocab_sz = len(lang)
 
     return lang, vocab_sz

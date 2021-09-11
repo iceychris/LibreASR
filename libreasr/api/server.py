@@ -17,7 +17,6 @@ from libreasr import LibreASR
 
 
 # gRPC settings
-WORKERS = 4
 EXECUTER = futures.ThreadPoolExecutor
 
 
@@ -82,10 +81,10 @@ class LibreASRServicer(apg.LibreASRServicer):
         log_print(f"... done.")
 
 
-def serve(languages, port="[::]:50051"):
+def serve(languages, port="[::]:50051", workers=4):
 
     # bring up server
-    server = grpc.server(EXECUTER(max_workers=WORKERS))
+    server = grpc.server(EXECUTER(max_workers=workers))
     apg.add_LibreASRServicer_to_server(LibreASRServicer(languages), server)
 
     # start gRPC server
@@ -104,6 +103,17 @@ if __name__ == "__main__":
         default="en",
         help="Language-codes of models to pre-load in the cache with ('en', 'en,de', ...)",
     )
+    parser.add_argument(
+        "--grpc-workers",
+        default=4,
+        type=int,
+        help="Number of max_workers argument for ThreadPoolExecuter",
+    )
+    parser.add_argument(
+        "--grpc-port",
+        default="[::]:50051",
+        help="gRPC port to listen on",
+    )
     args = parser.parse_args()
     cache = args.cache.lower()
     logging.basicConfig()
@@ -114,4 +124,4 @@ if __name__ == "__main__":
         ls = LANGUAGES
     else:
         ls = args.cache.lower().split(",")
-    serve(ls)
+    serve(ls, port=args.grpc_port, workers=args.grpc_workers)

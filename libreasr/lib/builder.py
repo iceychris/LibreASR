@@ -52,6 +52,17 @@ def resolve_csv_path(path, mode, suffix):
     return ps
 
 
+def get_single_dataset_info(conf, lang, mode):
+    paths = []
+    for x in conf["datasets"][lang][mode]:
+        if isinstance(x, str):
+            paths.append(conf["dataset_paths"][x])
+        else:
+            p = conf["dataset_paths"][x[0]]
+            paths.append((p, *x[1:]))
+    return paths
+
+
 def get_dataset_paths(conf, mode):
     lang = conf["lang"]
     if lang == "multi":
@@ -59,10 +70,10 @@ def get_dataset_paths(conf, mode):
         for l in conf["datasets"].keys():
             if conf["datasets"][l] is None:
                 continue
-            dses_l = [conf["dataset_paths"][x] for x in conf["datasets"][l][mode]]
+            dses_l = get_single_dataset_info(conf, l, mode)
             [paths.append(x) for x in dses_l]
     else:
-        paths = [conf["dataset_paths"][x] for x in conf["datasets"][lang][mode]]
+        paths = get_single_dataset_info(conf, lang, mode)
     return paths
 
 
@@ -115,14 +126,22 @@ class ASRDatabunchBuilder:
 
     def multi(self, paths, pcent=1.0):
         dfs = []
-        for path in paths:
+        for x in paths:
+            if isinstance(x, str):
+                path = x
+                pcent_one = 1.0
+            else:
+                path = x[0]
+                pcent_one = x[1]
             path = Path(path)
             qs = resolve_csv_path(path, self.mode, self.suffix)
             for q in qs:
                 df = pd.read_csv(q)
-                print(f"[builder] [{self.mode}] df {q} loaded.")
+                if pcent_one != 1.0:
+                    df = df.sample(frac=pcent_one, random_state=4471)
                 if pcent != 1.0:
                     df = df.sample(frac=pcent, random_state=4471)
+                print(f"[builder] [{self.mode}] df {q} loaded. len={len(df)}")
                 dfs.append(df)
         # TODO set sort=False at some point (as it is not needed)
         self.df = pd.concat(dfs, ignore_index=True, copy=False, sort=True)
@@ -245,36 +264,18 @@ class ASRDatabunchBuilder:
                 f.write(sanitize_str(l) + "\n")
         print("Done.")
 
-    def train_tokenizer(
-        self,
-        corpus_file=CORPUS_FILE,
-        model_file=TOKENIZER_MODEL_FILE,
-        vocab_sz=50000,
-        dump_labels=True,
-    ):
+    def data(self, as_list=True, to_file=CORPUS_FILE):
         assert self.built
-        import youtokentome as yttm
-
-        # first we need to dump labels
-        if dump_labels:
-            self.dump_labels(corpus_file)
-
-        # train model
-        print("Training yttm model...")
-        yttm.BPE.train(data=corpus_file, vocab_size=vocab_sz, model=model_file)
-        print("Done.")
-
-        # load model (for testing)
-        print("Testing yttm model...")
-        bpe = yttm.BPE(model=model_file)
-        # Two types of tokenization
-        test_text = "Are you freakin' crazy?"
-        encoded1 = bpe.encode([test_text], output_type=yttm.OutputType.ID)
-        encoded2 = bpe.encode([test_text], output_type=yttm.OutputType.SUBWORD)
-        decoded = bpe.decode(encoded1)
-        print(encoded1)
-        print(encoded2)
-        print(decoded)
+        if as_list:
+            lines = []
+            for i, row in tqdm.tqdm(self.df.iterrows(), total=len(self.df)):
+                # decode label
+                l = row.label.decode(ENCODING)
+                lines.append(sanitize_str(l))
+            return lines
+        else:
+            self.dump_labels(to_file=to_file)
+            return to_file
 
     def plot(self, save=False):
         if self.built:

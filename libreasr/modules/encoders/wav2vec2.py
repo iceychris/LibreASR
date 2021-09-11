@@ -38,11 +38,12 @@ class Wav2Vec2Encoder(nn.Module):
             AutoModel,
             Wav2Vec2FeatureExtractor,
             Wav2Vec2Processor,
+            Wav2Vec2Model,
         )
 
         name = kwargs.pop("wav2vec2_name", "facebook/wav2vec2-large-xlsr-53")
         cut_at = kwargs.pop("wav2vec2_cut", 15)
-        model = AutoModel.from_pretrained(name, gradient_checkpointing=True)
+        model = Wav2Vec2Model.from_pretrained(name, gradient_checkpointing=True)
         model.encoder.layers = model.encoder.layers[:cut_at]
         self.wav2vec2 = model
         print("Wav2Vec2 model loaded:")

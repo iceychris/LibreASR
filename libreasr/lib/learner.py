@@ -170,7 +170,7 @@ def reducer(report_loss_dict_fn, loss_dict, *args, reduction="mean", **kwargs):
     # check for NaN in all sublosses
     #  and bail
     for k, loss in loss_dict.items():
-        if torch.isnan(loss).any():
+        if torch.is_tensor(loss) and torch.isnan(loss).any():
             warn(f"Found NaN values in loss_dict (key {k}), mocking loss...")
             loss = torch.Tensor([0.0])
             loss.requires_grad_(True)
