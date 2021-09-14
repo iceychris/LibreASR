@@ -472,6 +472,7 @@ class Joint(Module):
         bias=True,
         act="tanh",
         dropout=0.0,
+        inplace=True,
     ):
         assert dropout == 0.0, "Dropout is not used in Joint"
         assert not reversible
@@ -480,7 +481,7 @@ class Joint(Module):
         if act == "tanh":
             activation = nn.Tanh()
         elif act == "relu":
-            activation = nn.ReLU()
+            activation = nn.ReLU(inplace=inplace)
         else:
             raise Exception(f"No such activation '{act}'")
 
@@ -514,7 +515,17 @@ class Joint(Module):
         softmax=True,
         log=True,
         normalize_grad=False,
+        expand=False,
     ):
+        # expand: pass [N, T, U, H] to the joint network
+        if expand:
+            N, U, H_p = h_pred.shape
+            N, T, H_e = h_enc.shape
+            sz_e = (N, T, U, H_e)
+            sz_p = (N, T, U, H_p)
+            h_enc = h_enc.unsqueeze(2).expand(sz_e).contiguous()
+            h_pred = h_pred.unsqueeze(1).expand(sz_p).contiguous()
+
         # https://arxiv.org/pdf/2011.01576.pdf
         if normalize_grad:
             h_pred.register_hook(lambda grad: grad / h_enc.size(1))
@@ -548,14 +559,15 @@ class Joint(Module):
 
 class JointJit(Joint):
     def forward(
-        self, h_pred: Tensor, h_enc: Tensor, softmax: bool, log: bool
+        self, h_pred: Tensor, h_enc: Tensor, softmax: bool, log: bool, expand: bool
     ) -> Tensor:
-        N, U, H_p = h_pred.shape
-        N, T, H_e = h_enc.shape
-        sz_e = (N, T, U, H_e)
-        sz_p = (N, T, U, H_p)
-        h_enc = h_enc.unsqueeze(2).expand(sz_e).contiguous()
-        h_pred = h_pred.unsqueeze(1).expand(sz_p).contiguous()
+        if expand:
+            N, U, H_p = h_pred.shape
+            N, T, H_e = h_enc.shape
+            sz_e = (N, T, U, H_e)
+            sz_p = (N, T, U, H_p)
+            h_enc = h_enc.unsqueeze(2).expand(sz_e).contiguous()
+            h_pred = h_pred.unsqueeze(1).expand(sz_p).contiguous()
         x = torch.cat((h_pred, h_enc), dim=-1)
         x = self.joint(x)
         if softmax:
@@ -642,10 +654,21 @@ class RNNTLoss(Module):
 
 
 class NoisyStudentLoss(Module):
-    def __init__(self, temp=1.0, beta=1e-3, gamma=1e-3, use_mse=True, shift=0):
+    def __init__(
+        self,
+        temp=1.0,
+        alpha=1.0,
+        beta=1e-3,
+        gamma=1e-3,
+        interpolate=True,
+        use_mse=True,
+        shift=0,
+    ):
         self.temp = temp
+        self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
+        self.interpolate = interpolate
         self.use_mse = use_mse
         self.shift = shift
         self.rnnt_loss = RNNTLoss()
@@ -683,33 +706,53 @@ class NoisyStudentLoss(Module):
     def _l2_loss(self, e1, e2, dims=(1, 2)):
         return self.mse(e1, e2).mean(dims)
 
+    def _l2_loss_encoder(self, e1, e2, dims=(1, 2), swap=True, mean=True):
+        if self.interpolate:
+            if swap:
+                e1, e2 = e2, e1
+            e1 = e1.permute(0, 2, 1).contiguous()
+            e2 = e2.permute(0, 2, 1).contiguous()
+            e1 = F.interpolate(e1, size=e2.size(-1), mode="nearest")
+        if mean:
+            return self.mse(e1, e2).mean(dims)
+        return self.mse(e1, e2).sum(dims)
+
     def forward(self, x, y, xl, yl, t_logits, s_logits, t_e, s_e, **kwargs):
         # dict of losses
         losses = dict()
 
         # rnnt loss
-        rnnt_logits = s_logits.log_softmax(dim=-1)
-        rnnt_loss_value = self.rnnt_loss(rnnt_logits, y, xl, yl, return_dict=False)
-        losses["rnnt_loss"] = rnnt_loss_value
-        losses["loss"] = rnnt_loss_value
+        if self.alpha > 0.0:
+            rnnt_logits = s_logits.log_softmax(dim=-1)
+            rnnt_loss_value = self.rnnt_loss(rnnt_logits, y, xl, yl, return_dict=False)
+            losses["rnnt_loss"] = rnnt_loss_value
+        else:
+            rnnt_loss_value = 0.0
 
         # encoder l2 loss
-        # l2_loss_value = self._l2_loss(t_e, s_e)
-        # losses["l2_loss"] = l2_loss_value
-        l2_loss_value = 0.0
+        if self.gamma > 0.0:
+            l2_loss_value = self._l2_loss_encoder(t_e, s_e)
+            losses["l2_loss"] = l2_loss_value
+        else:
+            l2_loss_value = 0.0
 
         # teacher student knowledge distillation loss
-        t_logits, s_logits = self._gather(t_logits, s_logits, labels=y)
-        t_logits, s_logits = self._shift(t_logits, s_logits)
-        if self.use_mse:
-            kd_loss_value = self._l2_loss(t_logits, s_logits, dims=(1, 2, 3))
+        if self.beta > 0.0:
+            t_logits, s_logits = self._gather(t_logits, s_logits, labels=y)
+            t_logits, s_logits = self._shift(t_logits, s_logits)
+            if self.use_mse:
+                kd_loss_value = self._l2_loss(t_logits, s_logits, dims=(1, 2, 3))
+            else:
+                kd_loss_value = self._kd_kldiv_loss(t_logits, s_logits)
+            losses["kd_loss"] = kd_loss_value
         else:
-            kd_loss_value = self._kd_kldiv_loss(t_logits, s_logits)
-        losses["kd_loss"] = kd_loss_value
+            kd_loss_value = 0.0
 
         # sum up
         losses["loss"] = (
-            rnnt_loss_value + self.gamma * l2_loss_value + self.beta * kd_loss_value
+            rnnt_loss_value * self.alpha
+            + l2_loss_value * self.gamma
+            + kd_loss_value * self.beta
         )
 
         return losses
@@ -783,6 +826,8 @@ class Transducer(Module):
             assert joint_kwargs.get("method", "concat") == "concat"
             o_sz = out_sz_enc + out_sz_pre
             self.joint = Joint(o_sz, joint_sz, vocab_sz, **joint_kwargs)
+        self.enable_predictor = enable_predictor
+        self.enable_joint = enable_joint
         self.feature_sz = feature_sz
         self.lang = lang
         self.blank = blank
@@ -839,12 +884,15 @@ class Transducer(Module):
         return m
 
     def param_groups(self):
-        return [
+        l = [
             self.preprocessor.param_groups(),
             self.encoder.param_groups(),
-            self.predictor.param_groups(),
-            self.joint.param_groups(),
         ]
+        if self.enable_predictor:
+            l.append(self.predictor.param_groups())
+        if self.enable_joint:
+            l.append(self.joint.param_groups())
+        return l
 
     def quantization_fix(self):
         self.__class__ = QuantizedTransducer
@@ -895,10 +943,15 @@ class Transducer(Module):
 
         # encoder
         with self.ctx("encoder"):
-            # x = x.reshape(x.size(0), x.size(1), -1)
             encoder_out = self.encoder(x, lengths=xl)
             raw_encoder_out = encoder_out
             xl = xl * (encoder_out.size(1) / x.size(1))
+
+        # bail if predictor is disabled
+        if not self.enable_predictor:
+            if return_encoder:
+                return None, raw_encoder_out
+            return None
 
         # N: batch size
         # T: n frames (time)
@@ -915,21 +968,10 @@ class Transducer(Module):
             predictor_out, _ = self.predictor(yconcat, lengths=yl + 1)
             N, U, H_p = predictor_out.size()
 
-        # expand:
-        # we need to pass [N, T, U, H] to the joint network
-        # NOTE: we might want to not include padding here?
-        with self.ctx("expand"):
-            M = max(T, U)
-            sz_e = (N, T, U, H_e)
-            sz_p = (N, T, U, H_p)
-            encoder_out = encoder_out.unsqueeze(2).expand(sz_e).contiguous()
-            predictor_out = predictor_out.unsqueeze(1).expand(sz_p).contiguous()
-            # print(encoder_out.shape, predictor_out.shape)
-
         # joint & project
         with self.ctx("joint"):
             joint_out = self.joint(
-                predictor_out, encoder_out, softmax=softmax, log=True
+                predictor_out, encoder_out, softmax=softmax, log=True, expand=True
             )
             if self.loss is None or return_logits:
                 return joint_out
@@ -1153,8 +1195,9 @@ class Transducer(Module):
             x = self.preprocessor(x)
 
         # encode full spectrogram (all timesteps)
+        xl = torch.LongTensor([x.size(1)]).to(self.device)
         with torch.no_grad():
-            encoder_out = self.encoder(x, lengths=torch.LongTensor([x.size(1)]))[0]
+            encoder_out = self.encoder(x, lengths=xl)[0]
 
         # predictor: BOS goes first
         y_one_char = torch.LongTensor([[self.bos]]).to(encoder_out.device)
@@ -1248,12 +1291,6 @@ class NoisyStudent(Module):
             t, t_e = self.teacher(
                 tpl, softmax=False, calc_loss=False, return_encoder=True
             )
-
-        # apply noise
-        # if self.training:
-        #     x = tpl[0]
-        #     dtype, dev, std = x.dtype, x.device, x.std()
-        #     tpl[0] += torch.randn(tpl[0].shape, dtype=dtype, device=dev) * std * 0.1
 
         # forward student
         s, s_e = self.student(tpl, softmax=False, calc_loss=False, return_encoder=True)

@@ -11,17 +11,16 @@ import grpc
 
 import libreasr.api.interfaces.libreasr_pb2 as ap
 import libreasr.api.interfaces.libreasr_pb2_grpc as apg
+from libreasr.api.storage import SimpleClipStorage
 from libreasr.lib.defaults import LANGUAGES
 from libreasr.lib.inference.events import EventTag
 from libreasr import LibreASR
 
 
 # gRPC settings
-WORKERS = 4
 EXECUTER = futures.ThreadPoolExecutor
 
 # model settings
-TRANSLATION_MODEL = "m2m_100_418M"
 TRANSLATION_MAX_MODELS = 1
 
 
@@ -40,18 +39,31 @@ def get_cached_libreasr_instance(cache, lang):
 
 
 class LibreASRServicer(apg.LibreASRServicer):
-    def __init__(self, languages):
+    def __init__(self, languages, translation_model):
         self.cache = {}
         for l in languages:
             get_cached_libreasr_instance(self.cache, l)
 
+        # defer loading translation model
+        #  on first use
+        self.translation_model_name = translation_model
+        self.translation_models = {}
+
+        # load up clip storage
+        self.clip_storage = SimpleClipStorage()
+
+    def translator(self, model_name):
         from easynmt import EasyNMT
 
-        self.translator = EasyNMT(
-            TRANSLATION_MODEL, max_loaded_models=TRANSLATION_MAX_MODELS
-        )
+        if model_name not in self.translation_models:
+            self.translation_models[model_name] = EasyNMT(
+                model_name, max_loaded_models=TRANSLATION_MAX_MODELS
+            )
+        return self.translation_models[model_name]
 
     def Transcribe(self, request, context):
+        a, s = request.audio, request.settings
+        aud, sr, lang, pvid = a.data, s.sr, s.lang, s.preload_voice_id
 
         # tensorize
         aud, sr, lang = request.data, request.sr, request.lang
@@ -70,15 +82,20 @@ class LibreASRServicer(apg.LibreASRServicer):
         return ap.Transcript(data=transcript)
 
     def TranscribeStream(self, request_iterator, context):
-        # peek at the first frame
+        # peek at the first packet
+        # it is expected to be of type AudioSettings
         #  (for getting sr)
-        frame = request_iterator.next()
-        sr = frame.sr
-        lang = frame.lang
-        unpeeked = itertools.chain([frame], request_iterator)
+        s = request_iterator.next().settings
+        sr, lang, pvid = s.sr, s.lang, s.preload_voice_id
+
+        # fetch preload voice
+        if pvid.lower() == "none" or pvid == "":
+            pv = None
+        else:
+            pv = self.clip_storage.load(pvid)
 
         # print
-        log_print(f"TranscribeStream(lang={lang}, sr={sr}, shape=({len(frame.data)}))")
+        log_print(f"TranscribeStream(lang={lang}, sr={sr})")
 
         # inference
         kwargs = {"sr": sr, "stream_opts": {"assistant": False, "debug": False}}
@@ -86,26 +103,36 @@ class LibreASRServicer(apg.LibreASRServicer):
         # grab instance
         l = get_cached_libreasr_instance(self.cache, lang)
 
-        for event in l.stream(iter(unpeeked), **kwargs):
+        for event in l.stream(request_iterator, pv=pv, **kwargs):
             # convert to protobuf
             #  and reply in a streaming fashion
             if event.tag in (EventTag.TRANSCRIPT, EventTag.SENTENCE):
                 yield event.to_protobuf()
         log_print(f"... done.")
 
+    def PreloadVoice(self, request, context):
+        a, s = request.audio, request.settings
+        aud, sr, lang, pvid = a.data, s.sr, s.lang, s.preload_voice_id
+        clip_id = self.clip_storage.save((aud, sr, lang))
+        return ap.VoiceClip(id=clip_id)
+
     def Translate(self, request, context):
         src, tgt, text = request.src, request.tgt, request.text
 
-        text = self.translator.translate(text, source_lang=src, target_lang=tgt)
+        text = self.translator(self.translation_model_name).translate(
+            text, source_lang=src, target_lang=tgt
+        )
 
         return ap.Text(src=src, tgt=tgt, text=text)
 
 
-def serve(languages, port="[::]:50051"):
+def serve(languages, port="[::]:50051", workers=4, translation_model="m2m_100_418M"):
 
     # bring up server
-    server = grpc.server(EXECUTER(max_workers=WORKERS))
-    apg.add_LibreASRServicer_to_server(LibreASRServicer(languages), server)
+    server = grpc.server(EXECUTER(max_workers=workers))
+    apg.add_LibreASRServicer_to_server(
+        LibreASRServicer(languages, translation_model=translation_model), server
+    )
 
     # start gRPC server
     log_print("gRPC server starting on", port)
@@ -123,6 +150,22 @@ if __name__ == "__main__":
         default="en",
         help="Language-codes of models to pre-load in the cache with ('en', 'en,de', ...)",
     )
+    parser.add_argument(
+        "--grpc-workers",
+        default=4,
+        type=int,
+        help="Number of max_workers argument for ThreadPoolExecuter",
+    )
+    parser.add_argument(
+        "--grpc-port",
+        default="[::]:50051",
+        help="gRPC port to listen on",
+    )
+    parser.add_argument(
+        "--translation-model",
+        default="m2m_100_418M",
+        help="Default EasyNMT translation model to use",
+    )
     args = parser.parse_args()
     cache = args.cache.lower()
     logging.basicConfig()
@@ -133,4 +176,9 @@ if __name__ == "__main__":
         ls = LANGUAGES
     else:
         ls = args.cache.lower().split(",")
-    serve(ls)
+    serve(
+        ls,
+        port=args.grpc_port,
+        workers=args.grpc_workers,
+        translation_model=args.translation_model,
+    )

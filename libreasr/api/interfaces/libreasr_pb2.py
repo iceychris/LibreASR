@@ -18,7 +18,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
     syntax="proto3",
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
-    serialized_pb=b'\n\x0elibreasr.proto\x12\x08LibreASR"/\n\x05\x41udio\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\n\n\x02sr\x18\x02 \x01(\x05\x12\x0c\n\x04lang\x18\x03 \x01(\t"\x1a\n\nTranscript\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\t"%\n\x0fTranscriptEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"#\n\rSentenceEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"b\n\x05\x45vent\x12\'\n\x02te\x18\x01 \x01(\x0b\x32\x19.LibreASR.TranscriptEventH\x00\x12%\n\x02se\x18\x02 \x01(\x0b\x32\x17.LibreASR.SentenceEventH\x00\x42\t\n\x07\x63ontent".\n\x04Text\x12\x0b\n\x03src\x18\x01 \x01(\t\x12\x0b\n\x03tgt\x18\x02 \x01(\t\x12\x0c\n\x04text\x18\x03 \x01(\t2\xac\x01\n\x08LibreASR\x12\x35\n\nTranscribe\x12\x0f.LibreASR.Audio\x1a\x14.LibreASR.Transcript"\x00\x12:\n\x10TranscribeStream\x12\x0f.LibreASR.Audio\x1a\x0f.LibreASR.Event"\x00(\x01\x30\x01\x12-\n\tTranslate\x12\x0e.LibreASR.Text\x1a\x0e.LibreASR.Text"\x00\x62\x06proto3',
+    serialized_pb=b'\n\x0elibreasr.proto\x12\x08LibreASR"\x15\n\x05\x41udio\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c">\n\x08Settings\x12\n\n\x02sr\x18\x01 \x01(\x05\x12\x0c\n\x04lang\x18\x02 \x01(\t\x12\x18\n\x10preload_voice_id\x18\x03 \x01(\t"X\n\x10\x41udioAndSettings\x12\x1e\n\x05\x61udio\x18\x01 \x01(\x0b\x32\x0f.LibreASR.Audio\x12$\n\x08settings\x18\x02 \x01(\x0b\x32\x12.LibreASR.Settings"f\n\x0f\x41udioOrSettings\x12 \n\x05\x61udio\x18\x01 \x01(\x0b\x32\x0f.LibreASR.AudioH\x00\x12&\n\x08settings\x18\x02 \x01(\x0b\x32\x12.LibreASR.SettingsH\x00\x42\t\n\x07\x63ontent"\x1a\n\nTranscript\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\t"%\n\x0fTranscriptEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"#\n\rSentenceEvent\x12\x12\n\ntranscript\x18\x01 \x01(\t"b\n\x05\x45vent\x12\'\n\x02te\x18\x01 \x01(\x0b\x32\x19.LibreASR.TranscriptEventH\x00\x12%\n\x02se\x18\x02 \x01(\x0b\x32\x17.LibreASR.SentenceEventH\x00\x42\t\n\x07\x63ontent"\x17\n\tVoiceClip\x12\n\n\x02id\x18\x01 \x01(\t"=\n\x04Text\x12\x0b\n\x03src\x18\x01 \x01(\t\x12\x0b\n\x03tgt\x18\x02 \x01(\t\x12\x0c\n\x04text\x18\x03 \x01(\t\x12\r\n\x05model\x18\x04 \x01(\t2\x84\x02\n\x08LibreASR\x12@\n\nTranscribe\x12\x1a.LibreASR.AudioAndSettings\x1a\x14.LibreASR.Transcript"\x00\x12\x44\n\x10TranscribeStream\x12\x19.LibreASR.AudioOrSettings\x1a\x0f.LibreASR.Event"\x00(\x01\x30\x01\x12\x41\n\x0cPreloadVoice\x12\x1a.LibreASR.AudioAndSettings\x1a\x13.LibreASR.VoiceClip"\x00\x12-\n\tTranslate\x12\x0e.LibreASR.Text\x1a\x0e.LibreASR.Text"\x00\x62\x06proto3',
 )
 
 
@@ -49,11 +49,33 @@ _AUDIO = _descriptor.Descriptor(
             file=DESCRIPTOR,
             create_key=_descriptor._internal_create_key,
         ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[],
+    serialized_start=28,
+    serialized_end=49,
+)
+
+
+_SETTINGS = _descriptor.Descriptor(
+    name="Settings",
+    full_name="LibreASR.Settings",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    create_key=_descriptor._internal_create_key,
+    fields=[
         _descriptor.FieldDescriptor(
             name="sr",
-            full_name="LibreASR.Audio.sr",
-            index=1,
-            number=2,
+            full_name="LibreASR.Settings.sr",
+            index=0,
+            number=1,
             type=5,
             cpp_type=1,
             label=1,
@@ -70,7 +92,26 @@ _AUDIO = _descriptor.Descriptor(
         ),
         _descriptor.FieldDescriptor(
             name="lang",
-            full_name="LibreASR.Audio.lang",
+            full_name="LibreASR.Settings.lang",
+            index=1,
+            number=2,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.FieldDescriptor(
+            name="preload_voice_id",
+            full_name="LibreASR.Settings.preload_voice_id",
             index=2,
             number=3,
             type=9,
@@ -96,8 +137,137 @@ _AUDIO = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=28,
-    serialized_end=75,
+    serialized_start=51,
+    serialized_end=113,
+)
+
+
+_AUDIOANDSETTINGS = _descriptor.Descriptor(
+    name="AudioAndSettings",
+    full_name="LibreASR.AudioAndSettings",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    create_key=_descriptor._internal_create_key,
+    fields=[
+        _descriptor.FieldDescriptor(
+            name="audio",
+            full_name="LibreASR.AudioAndSettings.audio",
+            index=0,
+            number=1,
+            type=11,
+            cpp_type=10,
+            label=1,
+            has_default_value=False,
+            default_value=None,
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.FieldDescriptor(
+            name="settings",
+            full_name="LibreASR.AudioAndSettings.settings",
+            index=1,
+            number=2,
+            type=11,
+            cpp_type=10,
+            label=1,
+            has_default_value=False,
+            default_value=None,
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[],
+    serialized_start=115,
+    serialized_end=203,
+)
+
+
+_AUDIOORSETTINGS = _descriptor.Descriptor(
+    name="AudioOrSettings",
+    full_name="LibreASR.AudioOrSettings",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    create_key=_descriptor._internal_create_key,
+    fields=[
+        _descriptor.FieldDescriptor(
+            name="audio",
+            full_name="LibreASR.AudioOrSettings.audio",
+            index=0,
+            number=1,
+            type=11,
+            cpp_type=10,
+            label=1,
+            has_default_value=False,
+            default_value=None,
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.FieldDescriptor(
+            name="settings",
+            full_name="LibreASR.AudioOrSettings.settings",
+            index=1,
+            number=2,
+            type=11,
+            cpp_type=10,
+            label=1,
+            has_default_value=False,
+            default_value=None,
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[
+        _descriptor.OneofDescriptor(
+            name="content",
+            full_name="LibreASR.AudioOrSettings.content",
+            index=0,
+            containing_type=None,
+            create_key=_descriptor._internal_create_key,
+            fields=[],
+        ),
+    ],
+    serialized_start=205,
+    serialized_end=307,
 )
 
 
@@ -137,8 +307,8 @@ _TRANSCRIPT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=77,
-    serialized_end=103,
+    serialized_start=309,
+    serialized_end=335,
 )
 
 
@@ -178,8 +348,8 @@ _TRANSCRIPTEVENT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=105,
-    serialized_end=142,
+    serialized_start=337,
+    serialized_end=374,
 )
 
 
@@ -219,8 +389,8 @@ _SENTENCEEVENT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=144,
-    serialized_end=179,
+    serialized_start=376,
+    serialized_end=411,
 )
 
 
@@ -288,8 +458,49 @@ _EVENT = _descriptor.Descriptor(
             fields=[],
         ),
     ],
-    serialized_start=181,
-    serialized_end=279,
+    serialized_start=413,
+    serialized_end=511,
+)
+
+
+_VOICECLIP = _descriptor.Descriptor(
+    name="VoiceClip",
+    full_name="LibreASR.VoiceClip",
+    filename=None,
+    file=DESCRIPTOR,
+    containing_type=None,
+    create_key=_descriptor._internal_create_key,
+    fields=[
+        _descriptor.FieldDescriptor(
+            name="id",
+            full_name="LibreASR.VoiceClip.id",
+            index=0,
+            number=1,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
+    ],
+    extensions=[],
+    nested_types=[],
+    enum_types=[],
+    serialized_options=None,
+    is_extendable=False,
+    syntax="proto3",
+    extension_ranges=[],
+    oneofs=[],
+    serialized_start=513,
+    serialized_end=536,
 )
 
 
@@ -358,6 +569,25 @@ _TEXT = _descriptor.Descriptor(
             file=DESCRIPTOR,
             create_key=_descriptor._internal_create_key,
         ),
+        _descriptor.FieldDescriptor(
+            name="model",
+            full_name="LibreASR.Text.model",
+            index=3,
+            number=4,
+            type=9,
+            cpp_type=9,
+            label=1,
+            has_default_value=False,
+            default_value=b"".decode("utf-8"),
+            message_type=None,
+            enum_type=None,
+            containing_type=None,
+            is_extension=False,
+            extension_scope=None,
+            serialized_options=None,
+            file=DESCRIPTOR,
+            create_key=_descriptor._internal_create_key,
+        ),
     ],
     extensions=[],
     nested_types=[],
@@ -367,10 +597,26 @@ _TEXT = _descriptor.Descriptor(
     syntax="proto3",
     extension_ranges=[],
     oneofs=[],
-    serialized_start=281,
-    serialized_end=327,
+    serialized_start=538,
+    serialized_end=599,
 )
 
+_AUDIOANDSETTINGS.fields_by_name["audio"].message_type = _AUDIO
+_AUDIOANDSETTINGS.fields_by_name["settings"].message_type = _SETTINGS
+_AUDIOORSETTINGS.fields_by_name["audio"].message_type = _AUDIO
+_AUDIOORSETTINGS.fields_by_name["settings"].message_type = _SETTINGS
+_AUDIOORSETTINGS.oneofs_by_name["content"].fields.append(
+    _AUDIOORSETTINGS.fields_by_name["audio"]
+)
+_AUDIOORSETTINGS.fields_by_name[
+    "audio"
+].containing_oneof = _AUDIOORSETTINGS.oneofs_by_name["content"]
+_AUDIOORSETTINGS.oneofs_by_name["content"].fields.append(
+    _AUDIOORSETTINGS.fields_by_name["settings"]
+)
+_AUDIOORSETTINGS.fields_by_name[
+    "settings"
+].containing_oneof = _AUDIOORSETTINGS.oneofs_by_name["content"]
 _EVENT.fields_by_name["te"].message_type = _TRANSCRIPTEVENT
 _EVENT.fields_by_name["se"].message_type = _SENTENCEEVENT
 _EVENT.oneofs_by_name["content"].fields.append(_EVENT.fields_by_name["te"])
@@ -378,10 +624,14 @@ _EVENT.fields_by_name["te"].containing_oneof = _EVENT.oneofs_by_name["content"]
 _EVENT.oneofs_by_name["content"].fields.append(_EVENT.fields_by_name["se"])
 _EVENT.fields_by_name["se"].containing_oneof = _EVENT.oneofs_by_name["content"]
 DESCRIPTOR.message_types_by_name["Audio"] = _AUDIO
+DESCRIPTOR.message_types_by_name["Settings"] = _SETTINGS
+DESCRIPTOR.message_types_by_name["AudioAndSettings"] = _AUDIOANDSETTINGS
+DESCRIPTOR.message_types_by_name["AudioOrSettings"] = _AUDIOORSETTINGS
 DESCRIPTOR.message_types_by_name["Transcript"] = _TRANSCRIPT
 DESCRIPTOR.message_types_by_name["TranscriptEvent"] = _TRANSCRIPTEVENT
 DESCRIPTOR.message_types_by_name["SentenceEvent"] = _SENTENCEEVENT
 DESCRIPTOR.message_types_by_name["Event"] = _EVENT
+DESCRIPTOR.message_types_by_name["VoiceClip"] = _VOICECLIP
 DESCRIPTOR.message_types_by_name["Text"] = _TEXT
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
@@ -395,6 +645,39 @@ Audio = _reflection.GeneratedProtocolMessageType(
     },
 )
 _sym_db.RegisterMessage(Audio)
+
+Settings = _reflection.GeneratedProtocolMessageType(
+    "Settings",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _SETTINGS,
+        "__module__": "libreasr_pb2"
+        # @@protoc_insertion_point(class_scope:LibreASR.Settings)
+    },
+)
+_sym_db.RegisterMessage(Settings)
+
+AudioAndSettings = _reflection.GeneratedProtocolMessageType(
+    "AudioAndSettings",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _AUDIOANDSETTINGS,
+        "__module__": "libreasr_pb2"
+        # @@protoc_insertion_point(class_scope:LibreASR.AudioAndSettings)
+    },
+)
+_sym_db.RegisterMessage(AudioAndSettings)
+
+AudioOrSettings = _reflection.GeneratedProtocolMessageType(
+    "AudioOrSettings",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _AUDIOORSETTINGS,
+        "__module__": "libreasr_pb2"
+        # @@protoc_insertion_point(class_scope:LibreASR.AudioOrSettings)
+    },
+)
+_sym_db.RegisterMessage(AudioOrSettings)
 
 Transcript = _reflection.GeneratedProtocolMessageType(
     "Transcript",
@@ -440,6 +723,17 @@ Event = _reflection.GeneratedProtocolMessageType(
 )
 _sym_db.RegisterMessage(Event)
 
+VoiceClip = _reflection.GeneratedProtocolMessageType(
+    "VoiceClip",
+    (_message.Message,),
+    {
+        "DESCRIPTOR": _VOICECLIP,
+        "__module__": "libreasr_pb2"
+        # @@protoc_insertion_point(class_scope:LibreASR.VoiceClip)
+    },
+)
+_sym_db.RegisterMessage(VoiceClip)
+
 Text = _reflection.GeneratedProtocolMessageType(
     "Text",
     (_message.Message,),
@@ -459,15 +753,15 @@ _LIBREASR = _descriptor.ServiceDescriptor(
     index=0,
     serialized_options=None,
     create_key=_descriptor._internal_create_key,
-    serialized_start=330,
-    serialized_end=502,
+    serialized_start=602,
+    serialized_end=862,
     methods=[
         _descriptor.MethodDescriptor(
             name="Transcribe",
             full_name="LibreASR.LibreASR.Transcribe",
             index=0,
             containing_service=None,
-            input_type=_AUDIO,
+            input_type=_AUDIOANDSETTINGS,
             output_type=_TRANSCRIPT,
             serialized_options=None,
             create_key=_descriptor._internal_create_key,
@@ -477,15 +771,25 @@ _LIBREASR = _descriptor.ServiceDescriptor(
             full_name="LibreASR.LibreASR.TranscribeStream",
             index=1,
             containing_service=None,
-            input_type=_AUDIO,
+            input_type=_AUDIOORSETTINGS,
             output_type=_EVENT,
+            serialized_options=None,
+            create_key=_descriptor._internal_create_key,
+        ),
+        _descriptor.MethodDescriptor(
+            name="PreloadVoice",
+            full_name="LibreASR.LibreASR.PreloadVoice",
+            index=2,
+            containing_service=None,
+            input_type=_AUDIOANDSETTINGS,
+            output_type=_VOICECLIP,
             serialized_options=None,
             create_key=_descriptor._internal_create_key,
         ),
         _descriptor.MethodDescriptor(
             name="Translate",
             full_name="LibreASR.LibreASR.Translate",
-            index=2,
+            index=3,
             containing_service=None,
             input_type=_TEXT,
             output_type=_TEXT,

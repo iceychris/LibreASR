@@ -50,16 +50,22 @@ def grpc_transcribe_stream(stub, lang, q_recv, q_send):
     log_print(f"grpc_transcribe_stream (lang {lang})")
 
     def yielder():
+        settings_sent = False
         while True:
             try:
                 itm = q_recv.get(timeout=GRPC_TIMEOUT)
-
-                # build grpc representation
                 data, sr, lang = itm
-                itm = ap.Audio(data=data, sr=sr, lang=lang)
 
-                yield itm
-            except:
+                # send settings grpc representation
+                if not settings_sent:
+                    yield ap.AudioOrSettings(
+                        settings=ap.Settings(sr=sr, lang=lang, preload_voice_id="")
+                    )
+                    settings_sent = True
+
+                # send data
+                yield ap.AudioOrSettings(audio=ap.Audio(data=data))
+            except queue.Empty as e:
                 return
 
     # inference
@@ -117,7 +123,9 @@ class APIHandler(tornado.web.RequestHandler):
                 lambda x: self.get_argument(x, ""), ["src", "tgt", "text"]
             )
             if src != "" and tgt != "" and text != "":
-                src, tgt, text = with_grpc_api(chan=self.chan)(grpc_translate)(src, tgt, text)
+                src, tgt, text = with_grpc_api(chan=self.chan)(grpc_translate)(
+                    src, tgt, text
+                )
             else:
                 print("/translate empty")
             res = {

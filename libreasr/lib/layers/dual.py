@@ -303,8 +303,6 @@ class DualModeMultiHeadSelfAttention(nn.Module):
         self.to_q = nn.Linear(dim, dim, bias=False)
         self.to_k = nn.Linear(dim, dim, bias=False)
         self.to_v = nn.Linear(dim, dim, bias=False)
-        self.to_o = nn.Linear(dim, dim, bias=True)
-        self.norm = nn.LayerNorm(dim)
         # causal = False,          # auto-regressive or not
         # look_backward = 1,       # each window looks at the window before
         # look_forward = 1,        # for non-auto-regressive case, will default to 1, so each window looks at the window before and after it
@@ -318,7 +316,7 @@ class DualModeMultiHeadSelfAttention(nn.Module):
         self.residual = residual
         assert (dim // n_heads) * n_heads == dim, "dim must be divisible by n_heads"
 
-    def forward(self, x, stream=True):
+    def forward(self, x, stream=True, **kwargs):
 
         # maybe store residual
         residual = x if self.residual else 0.0
@@ -338,13 +336,7 @@ class DualModeMultiHeadSelfAttention(nn.Module):
             attn = self.attn_full
 
         # attend
-        x = torch.cat([attn(q, k, v) for q, k, v in zip(q, k, v)], -1)
-
-        # project
-        x = self.to_o(x)
-
-        # norm
-        x = self.norm(x)
+        x = torch.cat([attn(q, k, v, **kwargs) for q, k, v in zip(q, k, v)], -1)
 
         # add residual
         x = x + residual

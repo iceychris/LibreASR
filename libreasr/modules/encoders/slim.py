@@ -8,13 +8,23 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 
 class ResidualSequence(nn.Module):
-    def __init__(self, layers):
+    def __init__(self, layers, adapters=[]):
         super().__init__()
         self.layers = nn.ModuleList(layers)
+        if len(adapters) != 0:
+            self.adapters = nn.ModuleList(adapters)
+            self.use_adapters = True
+        else:
+            self.use_adapters = False
 
     def forward(self, x, **kwargs):
-        for layer in self.layers:
-            x = x + layer(x, **kwargs)
+        if self.use_adapters:
+            for layer, adapter in zip(self.layers, self.adapters):
+                x = x + layer(x, **kwargs)
+                x = x + adapter(x, **kwargs)
+        else:
+            for layer in self.layers:
+                x = x + layer(x, **kwargs)
         return x
 
     def gather_state(self):
@@ -23,6 +33,12 @@ class ResidualSequence(nn.Module):
             s = layer.fn.fn.state
             states.append(s)
         return states
+
+    def param_groups(self, adapters_only=False):
+        if adapters_only:
+            return [p for p in self.adapters.parameters() if p.requires_grad]
+        else:
+            return [p for p in self.parameters() if p.requires_grad]
 
     def to_jit(self):
         self.__class__ = ResidualSequenceJit
@@ -103,12 +119,12 @@ class LSTMWrapper(nn.Module):
         self.proj = proj
         self.state = None
 
-    def forward(self, x, state=None, **kwargs):
+    def forward(self, x, state=None, lengths=None, **kwargs):
         if state is not None:
             s = state[self.idx]
         else:
             s = None
-        x, s = self.fn(x, s, **kwargs)
+        x, s = self.fn(x, s)
         x = self.proj(x)
         self.state = s
         return x
@@ -130,6 +146,25 @@ class LSTMWrapperJit(LSTMWrapper):
         return xn, sn
 
 
+class AdapterWrapper(nn.Module):
+    def __init__(self, adapter):
+        super().__init__()
+        self.adapter = adapter
+
+    def forward(self, x, state=None, lengths=None, **kwargs):
+        assert lengths is not None
+        xl = lengths
+        mask = (
+            torch.arange(x.size(1), dtype=xl.dtype, device=xl.device)[None, :]
+            < xl[:, None]
+        )
+        x = self.adapter(x, input_mask=mask, **kwargs)
+        return x
+
+    def to_jit(self):
+        raise NotImplementedError("no jit for AdapterWrapper")
+
+
 class SlimEncoder(nn.Module):
     def __init__(
         self,
@@ -148,6 +183,9 @@ class SlimEncoder(nn.Module):
         use_tmp_state_pcent=0.9,
         reversible=False,
         bidirectional=False,
+        adapters_enable=False,
+        adapters_only=False,
+        adapters_type="attn",
         **kwargs,
     ):
         super().__init__()
@@ -181,6 +219,31 @@ class SlimEncoder(nn.Module):
             if bidirectional
             else partial(nn.Sequential)
         )
+
+        # build adapter layers
+        self.adapters_enable = adapters_enable
+        self.adapters_only = adapters_only
+        adapters = []
+        if adapters_enable:
+            from libreasr.lib.layers.dual import DualModeMultiHeadSelfAttention
+
+            if adapters_type == "attn":
+                inner = partial(
+                    DualModeMultiHeadSelfAttention,
+                    dim,
+                    4,
+                    residual=False,
+                    window_size=16,
+                    autopad=True,
+                )
+            else:
+                raise NotImplementedError("No such adapter type " + adapters_type)
+            for ind in range(num_layers):
+                adapters.append(
+                    LayerScale(dim, ind + 1, PreNorm(dim, AdapterWrapper(inner())))
+                )
+
+        # build regular layers
         layers = []
         for ind in range(num_layers):
             layers.extend(
@@ -190,8 +253,7 @@ class SlimEncoder(nn.Module):
                     ),
                 ]
             )
-        execute_type = ResidualSequence
-        self.net = execute_type(layers)
+        self.net = ResidualSequence(layers, adapters)
         self.norm = nn.LayerNorm(out_sz)
 
     def initial_state(self):
@@ -203,20 +265,24 @@ class SlimEncoder(nn.Module):
         return [(mk_zeros(1, 1, dim), mk_zeros(1, 1, dim)) for _ in range(nl)]
 
     def to_jit(self):
+        assert not self.adapters_enable
         self.net.to_jit()
         self.__class__ = SlimEncoderJit
 
     def param_groups(self):
-        return [p for p in self.parameters() if p.requires_grad]
+        if self.adapters_enable and self.adapters_only:
+            return self.net.param_groups(adapters_only=True)
+        else:
+            return [p for p in self.parameters() if p.requires_grad]
 
-    def forward(self, x, state=None, lengths=None, return_state=False):
+    def forward(self, x, state=None, lengths=None, return_state=False, **kwargs):
         x = x.reshape((x.size(0), x.size(1), -1))
         x = self.drop_input(x)
         x = self.input_norm(x)
 
         # main block
         x = self.ff1(x)
-        x = self.net(x, state=state)
+        x = self.net(x, state=state, lengths=lengths, **kwargs)
         x = self.ff2(x)
         x = self.drop(x)
 

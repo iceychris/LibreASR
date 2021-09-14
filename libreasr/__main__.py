@@ -23,14 +23,16 @@ if __name__ == "__main__":
 
         # install handlers
         def signal_handler(sig, frame):
-            print('Terminating bridge and server...')
+            print("Terminating bridge and server...")
             time.sleep(5)
             try:
                 bridge.terminate()
-            except: pass
+            except:
+                pass
             try:
                 server.terminate()
-            except: pass
+            except:
+                pass
             sys.exit(0)
 
         signal.signal(signal.SIGINT, signal_handler)

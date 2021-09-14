@@ -19,6 +19,7 @@ from libreasr.lib.inference.beamsearch import Beamsearch
 def infer_stream(
     self: Transducer,
     generator,
+    pv=None,
     max_iters=DEFAULT_MAX_ITERS,
     alpha=LM_ALPHA,
     temp_lm=LM_TEMP,

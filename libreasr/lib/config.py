@@ -88,7 +88,7 @@ def apply_cuda_stuff(conf):
 
 def check_vocab_sz(conf):
     a = conf["model"]["vocab_sz"]
-    b = conf["wanted_vocab_sz"]
+    b = conf["tokenizer"].get("wanted_vocab_sz", 4096)
     if a != b:
         raise Exception(f"vocab sizes don't match: wanted={b}, current={a}")
 
@@ -119,10 +119,7 @@ def apply_overrides(conf, config_paths, silent=False):
 def fix_config(conf):
     # choose transforms
     if "x" not in list(conf["transforms"].keys()):
-        if conf["model"]["learnable_stft"]:
-            conf["transforms"]["x"] = conf["transforms"]["x-stft"]
-        else:
-            conf["transforms"]["x"] = conf["transforms"]["x-no-stft"]
+        conf["transforms"]["x"] = conf["transforms"]["x-stft"]
 
 
 def fix_config_inference(conf, model_name, base="~/.cache/LibreASR"):
@@ -209,15 +206,17 @@ def parse_and_apply_config(
         torch.backends.quantized.engine = conf["quantization"]["engine"]
 
     # grab language + sanity check
+    def data_fn(*args, **kwargs):
+        if not inference:
+            return builder_train.data(*args, **kwargs)
+        return []
+
     tok_path = os.path.expanduser(conf["tokenizer"]["model_file"])
-    try:
-        lang, _ = get_language(model_file=tok_path)
-    except:
-        builder_train.train_tokenizer(
-            model_file=tok_path,
-            vocab_sz=conf["model"]["vocab_sz"],
-        )
-        lang, _ = get_language(model_file=tok_path)
+    tok_type = conf["tokenizer"].get("type", "bpe")
+    tok_vocab = conf["tokenizer"].get("wanted_vocab_sz", 4096)
+    lang, _ = get_language(
+        type=tok_type, data_fn=data_fn, model_file=tok_path, vocab_sz=tok_vocab
+    )
     check_vocab_sz(conf)
 
     if not inference:
