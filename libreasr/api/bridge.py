@@ -46,7 +46,6 @@ def with_grpc_api(chan="localhost:50051"):
     return wrap
 
 
-@with_grpc_api()
 def grpc_transcribe_stream(stub, lang, q_recv, q_send):
     log_print(f"grpc_transcribe_stream (lang {lang})")
 
@@ -76,7 +75,6 @@ def grpc_transcribe_stream(stub, lang, q_recv, q_send):
     log_print("gRPC stopped")
 
 
-@with_grpc_api()
 def grpc_translate(stub, src, tgt, text):
     result = stub.Translate(ap.Text(src=src, tgt=tgt, text=text))
     src, tgt, text = result.src, result.tgt, result.text
@@ -89,6 +87,7 @@ class APIHandler(tornado.web.RequestHandler):
 
         info = {l: {"code": l, "name": l, "enable": True} for l in LANGUAGES}
         self.langs = {"languages": list(info.values())}
+        self.chan = chan
 
     def set_default_headers(self):
         self.set_header("Content-Type", "application/json")
@@ -118,7 +117,7 @@ class APIHandler(tornado.web.RequestHandler):
                 lambda x: self.get_argument(x, ""), ["src", "tgt", "text"]
             )
             if src != "" and tgt != "" and text != "":
-                src, tgt, text = grpc_translate(src, tgt, text)
+                src, tgt, text = with_grpc_api(chan=self.chan)(grpc_translate)(src, tgt, text)
             else:
                 print("/translate empty")
             res = {
@@ -171,7 +170,8 @@ class WebSocket(tornado.websocket.WebSocketHandler):
     def start_grpc_process(self, lang):
         # start grpc process
         q_recv, q_send = Queue(), Queue()
-        s = Process(target=grpc_transcribe_stream, args=(lang, q_recv, q_send))
+        f = with_grpc_api(chan=self.chan)(grpc_transcribe_stream)
+        s = Process(target=f, args=(lang, q_recv, q_send))
         s.start()
         self.q_recv = q_recv
         self.q_send = q_send

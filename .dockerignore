@@ -1,2 +1,4 @@
 *.tar.gz
 nbs/
+cache/
+examples/web/node_modules/

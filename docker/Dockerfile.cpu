@@ -1,24 +1,4 @@
-FROM debian:buster
+FROM iceychris/libreasr:cpu-base
 
-# python
-RUN apt-get update && \
-    apt-get install --no-install-recommends -y python3 python3-pip python3-setuptools git
-
-# misc
-RUN apt-get update && \
-    apt-get install -y gcc g++ sox libsox-dev libsox-fmt-all vim make \
-    python3-dev portaudio19-dev alsa-utils
-
-# python basics
-RUN python3 -m pip install packaging wheel setuptools Cython
-
-COPY requirements.inference.txt .
-
-# wrap pip command + reqs
-RUN alias pip3="python3 -m pip" && pip3 install -r requirements.inference.txt
-
-# bug in ray?
-RUN pip3 uninstall -y dataclasses
-
-WORKDIR /workspace
-CMD ["/bin/bash"]
+COPY . /workspace
+CMD ["make", "deploy"]

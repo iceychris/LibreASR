@@ -1,32 +1,23 @@
-# torch
---find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.7.1+cpu 
-torchvision==0.8.2+cpu
-torchaudio
-
-# misc
-packaging
-wheel
-setuptools
-
-# fastai stuff
-fastai
-fastcore
-fastaudio
+# torch and fastai stuff
+# fastai==2.1.8
+fastai==2.1.9
+torchaudio==0.7.2
+fastaudio==0.1.4
 
 # other
-Cython
-tensorboard
-youtokentome
-editdistance
-jiwer
-IPython
-tornado
-
-# models
-# x-transformers==0.8.1
-memcnn==1.5.0
+Cython==0.29.21
+tensorboard==2.4.1
+youtokentome==1.0.6
+editdistance==0.5.3
+jiwer==2.2.0
+IPython==7.17.0
+tornado==6.0.4
 
 # viz
 jupyter==1.0.0
+
+# translation
+easynmt==2.0.1
+lru-dict==1.1.7
+nnAudio==0.2.6
 
