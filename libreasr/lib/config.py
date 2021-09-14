@@ -88,7 +88,7 @@ def apply_cuda_stuff(conf):
 
 def check_vocab_sz(conf):
     a = conf["model"]["vocab_sz"]
-    b = conf["tokenizer"].get("wanted_vocab_sz", 0)
+    b = conf["tokenizer"].get("wanted_vocab_sz", 4096)
     if a != b:
         raise Exception(f"vocab sizes don't match: wanted={b}, current={a}")
 

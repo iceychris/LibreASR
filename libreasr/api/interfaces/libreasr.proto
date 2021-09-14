@@ -3,15 +3,34 @@ syntax = "proto3";
 package LibreASR;
 
 service LibreASR {
-  rpc Transcribe(Audio) returns (Transcript) {}
-  rpc TranscribeStream(stream Audio) returns (stream Event) {}
+
+  rpc Transcribe(AudioAndSettings) returns (Transcript) {}
+  rpc TranscribeStream(stream AudioOrSettings) returns (stream Event) {}
+  rpc PreloadVoice(AudioAndSettings) returns (VoiceClip) {}
+
   rpc Translate(Text) returns (Text) {}
 }
 
 message Audio {
   bytes data = 1;
-  int32 sr = 2;
-  string lang = 3;
+}
+
+message Settings {
+  int32 sr = 1;
+  string lang = 2;
+  string preload_voice_id = 3;
+}
+
+message AudioAndSettings {
+  Audio audio = 1;
+  Settings settings = 2;
+}
+
+message AudioOrSettings {
+  oneof content {
+    Audio audio = 1;
+    Settings settings = 2;
+  }
 }
 
 message Transcript {
@@ -33,8 +52,13 @@ message Event {
   }
 }
 
+message VoiceClip {
+  string id = 1;
+}
+
 message Text {
   string src = 1;
   string tgt = 2;
   string text = 3;
+  string model = 4;
 }

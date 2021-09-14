@@ -479,7 +479,7 @@ class Joint(Module):
         self.method = method
         self.reversible = reversible
         if act == "tanh":
-            activation = nn.Tanh(inplace=inplace)
+            activation = nn.Tanh()
         elif act == "relu":
             activation = nn.ReLU(inplace=inplace)
         else:

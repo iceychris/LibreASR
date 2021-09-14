@@ -11,15 +11,20 @@ class ResidualSequence(nn.Module):
     def __init__(self, layers, adapters=[]):
         super().__init__()
         self.layers = nn.ModuleList(layers)
-        if len(adapters) == 0:
-            self.adapters = nn.ModuleList([nn.Identity() for _ in layers])
-        else:
+        if len(adapters) != 0:
             self.adapters = nn.ModuleList(adapters)
+            self.use_adapters = True
+        else:
+            self.use_adapters = False
 
     def forward(self, x, **kwargs):
-        for layer, adapter in zip(self.layers, self.adapters):
-            x = x + layer(x, **kwargs)
-            x = x + adapter(x, **kwargs)
+        if self.use_adapters:
+            for layer, adapter in zip(self.layers, self.adapters):
+                x = x + layer(x, **kwargs)
+                x = x + adapter(x, **kwargs)
+        else:
+            for layer in self.layers:
+                x = x + layer(x, **kwargs)
         return x
 
     def gather_state(self):

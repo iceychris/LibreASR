@@ -223,6 +223,8 @@ def tensorize(x):
 
     # some kind of numpy bytes
     arr = x
+    if hasattr(x, "audio"):
+        x = x.audio
     if hasattr(x, "data") and isinstance(x.data, (bytes, bytearray)):
         arr = np.frombuffer(x.data, dtype=np.float32)
     elif isinstance(x, (bytes, bytearray)):

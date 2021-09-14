@@ -1,6 +1,9 @@
 import argparse
 import os
 import subprocess
+import signal
+import sys
+import time
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -17,6 +20,23 @@ if __name__ == "__main__":
         # start
         bridge = subprocess.Popen(["python3", "-m", "libreasr.api.bridge"])
         server = subprocess.Popen(["python3", "-m", "libreasr.api.server"])
+
+        # install handlers
+        def signal_handler(sig, frame):
+            print("Terminating bridge and server...")
+            time.sleep(5)
+            try:
+                bridge.terminate()
+            except:
+                pass
+            try:
+                server.terminate()
+            except:
+                pass
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.pause()
 
         # block
         bridge.communicate()
