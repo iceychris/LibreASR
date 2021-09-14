@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: asr-demo
+  name: libreasr
 spec:
   selector:
     matchLabels:
-      app: asr-demo
+      app: libreasr
   replicas: 1
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: asr-demo
+        app: libreasr
     spec:
       securityContext:
         runAsUser: 65534
@@ -20,7 +20,7 @@ spec:
       containers:
       - image: libreasr-deploy:latest
         imagePullPolicy: Never
-        name: asr-demo
+        name: libreasr
         env:
         - name: NUMBA_CACHE_DIR
           value: "/tmp"
@@ -33,7 +33,7 @@ spec:
         ports:
         - containerPort: 8080
           name: http
-      hostname: asr-demo
+      hostname: libreasr
       restartPolicy: Always
 status: {}
 
@@ -42,9 +42,9 @@ status: {}
 apiVersion: v1
 kind: Service
 metadata:
-  name: asr-demo
+  name: libreasr
   labels:
-    app: asr-demo
+    app: libreasr
 spec:
   type: ClusterIP
   ports:
@@ -52,26 +52,26 @@ spec:
       targetPort: 8080
       name: http
   selector:
-    app: asr-demo
+    app: libreasr
 
 ---
 
 apiVersion: networking.k8s.io/v1beta1
 kind: Ingress
 metadata:
-  name: ingress-asr-demo-new
+  name: ingress-libreasr-new
   annotations:
     kubernetes.io/ingress.class: "nginx"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   tls:
   - hosts:
-    - asr-demo.example.com
-    secretName: tls-asr-demo-new
+    - libreasr.example.com
+    secretName: tls-libreasr-new
   rules:
-  - host: asr-demo.example.com
+  - host: libreasr.example.com
     http:
       paths:
       - backend:
-          serviceName: asr-demo
+          serviceName: libreasr
           servicePort: 80

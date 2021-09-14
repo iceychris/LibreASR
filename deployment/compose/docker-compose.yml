@@ -1,0 +1,26 @@
+version: "3"
+
+services:
+
+  server:
+    image: iceychris/libreasr:cpu
+    command: ["python3", "-m", "libreasr.api.server"]
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./cache:/home/runner/.cache:rw
+
+  bridge:
+    image: iceychris/libreasr:cpu
+    command: ["python3", "-m", "libreasr.api.bridge", "--grpc-host", "server:50051"]
+    depends_on:
+      - server
+
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx-loadbalancer.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - bridge
+    ports:
+      - "8080:8080"
