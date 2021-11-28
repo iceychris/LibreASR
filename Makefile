@@ -18,7 +18,8 @@ format:
 
 # DOCKER_IMAGE=asr-pytorch
 # DOCKER_IMAGE=iceychris/libreasr:latest
-DOCKER_IMAGE=iceychris/libreasr:cpu-dev
+# DOCKER_IMAGE=iceychris/libreasr:cpu-dev
+DOCKER_IMAGE=libreasr:latest
 DOCKER_SHELL=/bin/bash
 # DOCKER_EXTRA_ARGS=--runtime=nvidia --shm-size=4096m -v /data/data-remote:/data
 DOCKER_EXTRA_ARGS=-v /data/data-remote:/data
@@ -114,7 +115,7 @@ tests:
 	python3 -m unittest
 
 nb:
-	pip3 install jupyter && jupyter notebook --ip 0.0.0.0 --no-browser --allow-root --port=8889
+	pip3 install jupyter && jupyter lab --ip 0.0.0.0 --no-browser --allow-root --port=8889
 
 tensorboard:
 	nix-shell -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/f269d9a428497e2a2ec9027f2d613f128249f8ab.tar.gz \
@@ -127,6 +128,15 @@ clean:
 
 post-install:
 	sudo /opt/conda/bin/pip3 install -U -r ./docker/requirements-post.txt
+
+docker-up:
+	docker build -f docker/Dockerfile.gpu-new -t libreasr:latest docker
+	docker run --rm -it \
+		--runtime=nvidia --shm-size=4G \
+		-v $(shell pwd):/workspace \
+		-v /data:/data \
+		-p 8889:8889 \
+		libreasr:latest /bin/bash
 
 
 

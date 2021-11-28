@@ -171,9 +171,9 @@ class SlimEncoder(nn.Module):
         feature_sz,
         hidden_sz,
         out_sz,
-        dropout=0.01,
         dropout_input=0.0,
-        dropout_inner=0.0,
+        dropout_net=0.0,
+        dropout_final=0.0,
         num_layers=2,
         trace=True,
         device="cuda:0",
@@ -192,7 +192,6 @@ class SlimEncoder(nn.Module):
         self.num_layers = num_layers
         self.drop_input = nn.Dropout(dropout_input)
         self.input_norm = nn.LayerNorm(feature_sz)
-        self.drop = nn.Dropout(dropout)
 
         # ff layer at start
         self.ff1 = nn.Linear(feature_sz, hidden_sz)
@@ -214,11 +213,12 @@ class SlimEncoder(nn.Module):
             num_layers=1,
             bidirectional=bidirectional,
         )
-        proj = (
-            partial(nn.Linear, dim * 2, dim)
-            if bidirectional
-            else partial(nn.Sequential)
-        )
+        def proj():
+            modules = []
+            if bidirectional:
+                modules.append(nn.Linear(dim * 2, dim))
+            modules.append(nn.Dropout(dropout_net))
+            return nn.Sequential(*modules)
 
         # build adapter layers
         self.adapters_enable = adapters_enable
@@ -254,6 +254,7 @@ class SlimEncoder(nn.Module):
                 ]
             )
         self.net = ResidualSequence(layers, adapters)
+        self.drop_final = nn.Dropout(dropout_final)
         self.norm = nn.LayerNorm(out_sz)
 
     def initial_state(self):
@@ -284,7 +285,7 @@ class SlimEncoder(nn.Module):
         x = self.ff1(x)
         x = self.net(x, state=state, lengths=lengths, **kwargs)
         x = self.ff2(x)
-        x = self.drop(x)
+        x = self.drop_final(x)
 
         # final norm
         x = self.norm(x)

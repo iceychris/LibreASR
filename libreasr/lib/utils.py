@@ -5,6 +5,7 @@ from collections import OrderedDict
 from collections.abc import Mapping
 import re
 import sys
+from typing import Generator
 
 import matplotlib.pyplot as plt
 
@@ -236,17 +237,21 @@ def tensorize(x):
     return torch.FloatTensor(arr)[None]
 
 
-def cudaize(x):
+def cudaize(x, device=None):
     if torch.is_tensor(x):
-        return x.cuda()
+        if device is None:
+            return x.cuda()
+        return x.to(device)
     if isinstance(x, tuple):
-        return (cudaize(t) for t in x)
+        return tuple([cudaize(t, device) for t in x])
     if isinstance(x, list):
-        return [cudaize(t) for t in x]
+        return [cudaize(t, device) for t in x]
     if isinstance(x, dict):
         for k, v in x.items():
-            x[k] = cudaize(v)
+            x[k] = cudaize(v, device)
         return x
+    import pdb
+    pdb.set_trace()
     return x
 
 

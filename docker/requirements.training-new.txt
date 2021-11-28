@@ -1,12 +1,12 @@
 # misc
-packaging==20.9
-wheel==0.35.1
-setuptools==50.3.1.post20201107
+packaging
+wheel
+setuptools
 
 # torch and fastai stuff
-fastai==2.1.8
-torchaudio==0.7.2
-fastaudio==0.1.4
+fastai==2.5.3
+torchaudio
+fastaudio==1.0.2
 
 # other
 Cython==0.29.21
@@ -25,4 +25,4 @@ memcnn==1.5.0
 ray[tune]==1.2.0
 
 # loss
-warp-rnnt==0.4.0
+warp-rnnt==0.5.0

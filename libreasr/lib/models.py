@@ -1,12 +1,7 @@
 import contextlib
-import operator
 import time
 import random
-from queue import PriorityQueue
-from functools import partial, lru_cache
-import itertools
-import math
-from dataclasses import dataclass, field
+from functools import partial
 from typing import List, Optional, Tuple
 
 import torch
@@ -15,10 +10,7 @@ import torch.nn.functional as F
 
 import numpy as np
 
-from fastai.vision.models.xresnet import xresnet18
-from fastai.layers import Debugger, ResBlock
 from fastai.torch_core import Module
-from fastai.learner import CancelBatchException
 
 from IPython.core.debugger import set_trace
 
@@ -96,6 +88,7 @@ class SpecAugment(Module):
         time_mask_sz=4,
         freq_mask_n=4,
         freq_mask_sz=2,
+        p_apply_one_mask=0.75,
         start=None,
         val=None,
         enable_eval=False,
@@ -104,6 +97,7 @@ class SpecAugment(Module):
         self.time_mask_sz = time_mask_sz
         self.freq_mask_n = freq_mask_n
         self.freq_mask_sz = freq_mask_sz
+        self.p_apply_one_mask = p_apply_one_mask
         self.start = start
         self.val = val
         self.ee = enable_eval
@@ -120,13 +114,14 @@ class SpecAugment(Module):
 
         def mk_masks(_min, _max):
             for _ in range(num_masks):
-                mask = torch.ones(x, size, device=spectro.device) * mask_val
-                start = random.randint(_min, _max - size)
-                if not 0 <= start <= y - size:
-                    raise ValueError(
-                        f"Start value '{start}' out of range for AudioSpectrogram of shape {sg.shape}"
-                    )
-                sg[:, :, start : start + size] = mask
+                if random.random() < self.p_apply_one_mask:
+                    mask = torch.ones(x, size, device=spectro.device) * mask_val
+                    start = random.randint(_min, _max - size)
+                    if not 0 <= start <= y - size:
+                        raise ValueError(
+                            f"Start value '{start}' out of range for AudioSpectrogram of shape {sg.shape}"
+                        )
+                    sg[:, :, start : start + size] = mask
 
         if adaptive:
             sz = 100
@@ -474,8 +469,8 @@ class Joint(Module):
         dropout=0.0,
         inplace=True,
     ):
-        assert dropout == 0.0, "Dropout is not used in Joint"
         assert not reversible
+        self.dropout = nn.Dropout(dropout)
         self.method = method
         self.reversible = reversible
         if act == "tanh":
@@ -525,6 +520,8 @@ class Joint(Module):
             sz_p = (N, T, U, H_p)
             h_enc = h_enc.unsqueeze(2).expand(sz_e).contiguous()
             h_pred = h_pred.unsqueeze(1).expand(sz_p).contiguous()
+        
+
 
         # https://arxiv.org/pdf/2011.01576.pdf
         if normalize_grad:
@@ -540,6 +537,11 @@ class Joint(Module):
             x = torch.cat((h_pred, h_enc), dim=-1)
         else:
             raise Exception("No such method")
+
+        # apply dropout
+        x = self.dropout(x)
+
+        # apply joint network
         if self.reversible:
             if self.training:
                 x = self.joint(x)
@@ -862,8 +864,6 @@ class Transducer(Module):
             conf["model"]["out_sz_pre"],
             conf["model"]["joint_sz"],
             lang,
-            p_e=conf["model"]["encoder"]["dropout"],
-            p_p=conf["model"]["predictor"]["dropout"],
             perf=False,
             raw_audio=False,
             use_tmp_bos=conf["model"]["use_tmp_bos"],
@@ -923,7 +923,7 @@ class Transducer(Module):
         tpl,
         softmax=True,
         return_logits=False,
-        calc_loss=True,
+        return_loss=True,
         return_encoder=False,
     ):
         """
@@ -983,7 +983,7 @@ class Transducer(Module):
                 ctc_out, _ = self.ctc_head(raw_encoder_out)
 
         # calc loss
-        if calc_loss:
+        if return_loss:
             with self.ctx("loss"):
                 loss = self.loss(joint_out, y, xl, yl, ctc_out=ctc_out)
             return loss
@@ -1289,11 +1289,11 @@ class NoisyStudent(Module):
         self.teacher.eval()
         with torch.no_grad():
             t, t_e = self.teacher(
-                tpl, softmax=False, calc_loss=False, return_encoder=True
+                tpl, softmax=False, return_loss=False, return_encoder=True
             )
 
         # forward student
-        s, s_e = self.student(tpl, softmax=False, calc_loss=False, return_encoder=True)
+        s, s_e = self.student(tpl, softmax=False, return_loss=False, return_encoder=True)
 
         # calculate loss
         return self.loss(*tpl, t, s, t_e, s_e)

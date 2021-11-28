@@ -5,21 +5,34 @@ import traceback
 import torch
 
 from fastai.learner import Callback, CancelBatchException
-from fastai.callback.fp16 import NativeMixedPrecision
+from fastai.callback.fp16 import MixedPrecision
 from fastai.torch_core import rank_distrib
 from fastai.distributed import DistributedTrainer, rank0_first
 
 from torch.utils.tensorboard import SummaryWriter
+
+from libreasr.lib.utils import cudaize
 
 
 def maybe_clip_grad_norm(model, clip):
     if clip > 0.0:
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip, 2.0)
 
+class DeviceCallback(Callback):
+    count = 100
+
+    def __init__(self, device="cpu"):
+        super().__init__()
+        self.device = device
+
+    def before_batch(self):
+        self.learn.xb = cudaize(self.learn.xb, self.device)
+        self.learn.yb = cudaize(self.learn.yb, self.device)
+
 
 class GradAccumCallback(Callback):
     count = 0
-    run_after = NativeMixedPrecision
+    run_after = MixedPrecision
 
     def __init__(self, num_batches, clip):
         self.num_batches = num_batches
@@ -117,7 +130,7 @@ class Rank0Wrapper(Callback):
 
 
 class EvaluatorCallback(Callback):
-    run_after = NativeMixedPrecision
+    run_after = MixedPrecision
 
     def __init__(self, evaluator, ddp=False, tests_per_epoch=8, enable=True, **kwargs):
         self.evaluator = evaluator

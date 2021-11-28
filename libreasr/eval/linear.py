@@ -5,7 +5,6 @@ import numpy as np
 from sklearn import linear_model
 
 from libreasr.eval.evaluator import Evaluator
-from libreasr.data.basic import grab_data
 
 
 class FeatureExtractor(torch.nn.Module):
@@ -137,6 +136,7 @@ class LinearEvaluationResult:
 
 class LinearEvaluator(Evaluator):
     def __init__(self, convert_fn=convert, device="cpu"):
+        from libreasr.data.basic import grab_data
         self.convert_fn = convert_fn
         self.device = device
         self.t, self.v = grab_data()

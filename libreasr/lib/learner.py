@@ -12,8 +12,8 @@ from fastai.callback.tracker import (
     SaveModelCallback,
     ReduceLROnPlateau,
 )
-from fastai.callback.fp16 import NativeMixedPrecision
-from fastai.callback.data import CudaCallback
+from fastai.callback.fp16 import MixedPrecision
+# from fastai.callback.data import CudaCallback
 from fastai.optimizer import Adam, Lamb, Lookahead, ranger
 from fastai.torch_core import rank_distrib
 from fastai.distributed import DistributedTrainer
@@ -21,6 +21,7 @@ from fastai.distributed import DistributedTrainer
 from IPython.core.debugger import set_trace
 
 from libreasr.lib.callbacks import (
+    DeviceCallback,
     Tensorboard,
     GradAccumCallback,
     GradAccumCallbackDDP,
@@ -57,7 +58,7 @@ def over9000(p, lr=slice(3e-3)):
 
 
 class HutchinsonTraceCallback(Callback):
-    run_before = NativeMixedPrecision
+    run_before = MixedPrecision
 
     def __init__(self, block_length=1):
         self.block_length = block_length
@@ -208,7 +209,7 @@ class LibreASRLearner(Learner):
 
         # define callbacks
         cbs = [
-            CudaCallback(),
+            DeviceCallback(device),
             TerminateOnNaNCallback(),
             ReduceLROnPlateau(patience=2, min_lr=1e-6),
         ]
@@ -319,6 +320,12 @@ class LibreASRLearner(Learner):
                 report_loss_dict_fn = _tb.report_loss_dict
                 extra_cbs.append(_tb)
 
+        # possibly enable mixed precision
+        if mp:
+            del MixedPrecision.after_pred
+            extra_cbs.append(MixedPrecision)
+            print("MixedPrecision activated.")
+
         # construct learner
         learn = Learner(
             db,
@@ -331,7 +338,4 @@ class LibreASRLearner(Learner):
         learn.extra_cbs = extra_cbs
         learn.conf = conf
         learn.lang_name = lang_name
-        if mp:
-            learn = learn.to_native_fp16()
-            print("NativeMixedPrecision activated.")
         return learn

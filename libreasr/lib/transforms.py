@@ -3,7 +3,7 @@ import multiprocessing
 import math
 import sys
 import os
-from typing import Tuple
+from typing import Any, Tuple
 import random
 
 # fastai v2 stuff
@@ -27,9 +27,7 @@ from fastcore.transform import _TfmMeta
 from fastaudio.core.signal import *
 from fastaudio.augment.signal import shift_signal, AddNoise
 
-import pandas as pd
-import numpy as np
-from scipy.signal import decimate, resample_poly
+from scipy.signal import resample_poly
 
 import torchaudio
 
@@ -49,6 +47,20 @@ def debug(self, inp=None):
 
 # use sox_io as default backend
 torchaudio.set_audio_backend("soundfile")
+
+
+class RandomTransform(Transform):
+    def __init__(self, random=False, p=0.5):
+        self.random = random
+        self.p = p
+
+    def encodes(self, item: AudioTensor) -> AudioTensor:
+        assert not isinstance(item, int)
+        if not self.random:
+            return item
+        if random.random() < self.p:
+            return self._encodes(item)
+        return item
 
 
 class OpenAudioSpan(Transform):
@@ -167,17 +179,17 @@ class Dummy(Transform):
         return i
 
 
-class MultiCrop(Transform):
+class MultiCrop(RandomTransform):
     order = 4
 
-    def __init__(self, random=True, duration=1.5, crops=2, silence=0.25, **kwargs):
-        self.random = random
+    def __init__(self, random=True, p=0.5, duration=1.5, crops=2, silence=0.25, **kwargs):
+        super().__init__(random=random, p=p)
         self.d = duration
         self.crops = crops
         self.silence = silence
         assert crops >= 2
 
-    def encodes(self, i: AudioTensor) -> AudioTensor:
+    def _encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
         ds = int(self.d * i.sr)
         ss = int(self.silence * i.sr)
@@ -185,10 +197,9 @@ class MultiCrop(Transform):
         fs = n * ds + (n - 1) * ss
         offset = 0
         chans = i.size(0)
-        if self.random:
-            _max = i.size(1) - n * ds
-            if not _max <= 0:
-                offset = torch.randint(low=0, high=_max, size=(1,)).item()
+        _max = i.size(1) - n * ds
+        if not _max <= 0:
+            offset = torch.randint(low=0, high=_max, size=(1,)).item()
         ts = []
         for j in range(n):
             _from, _to = offset + ds * j, offset + ds * (j + 1)
@@ -198,18 +209,16 @@ class MultiCrop(Transform):
         return AudioTensor(torch.cat(ts, dim=1), i.sr)
 
 
-class ResamplePoly(Transform):
+class ResamplePoly(RandomTransform):
     order = 3
     "This takes > ~30ms for one item"
 
-    def __init__(self, random=True, delta=20, **kwargs):
-        self.random = random
+    def __init__(self, random=True, p=0.5, delta=20, **kwargs):
+        super().__init__(random=random, p=p)
         self.delta = delta
 
-    def encodes(self, i: AudioTensor) -> AudioTensor:
+    def _encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
-        if not self.random:
-            return i
         sig, sr = i, i.sr
         rand = torch.randint(low=-self.delta, high=self.delta + 1, size=(1,))
         new_audio = torch.from_numpy(
@@ -218,49 +227,43 @@ class ResamplePoly(Transform):
         return AudioTensor(new_audio, i.sr)
 
 
-class ChangeVolume(Transform):
+class ChangeVolume(RandomTransform):
     order = 4
     "Change the overall (and elementwise) volume of an AudioTensor"
 
-    def __init__(self, random=True, pcent=0.1, **kwargs):
-        self.random = random
+    def __init__(self, random=True, p=0.5, pcent=0.1, **kwargs):
+        super().__init__(random=random, p=p)
         self.pcent = pcent
 
-    def encodes(self, i: AudioTensor) -> AudioTensor:
+    def _encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
-        if not self.random:
-            return i
         aud = i
         rand = FloatTensor([1]).uniform_(1.0 - self.pcent, 1.0 + self.pcent)
         return AudioTensor(aud * rand, i.sr)
 
 
-class MyAddNoise(Transform):
+class MyAddNoise(RandomTransform):
     order = 5
 
-    def __init__(self, random=True, *args, **kwargs):
-        self.random = random
+    def __init__(self, random=True, p=0.5, *args, **kwargs):
+        super().__init__(random=random, p=p)
         self.tfm = AddNoise(*args, **kwargs)
 
-    def encodes(self, i: AudioTensor) -> AudioTensor:
+    def _encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
-        if not self.random:
-            return i
         return self.tfm(i)
 
 
-class MySignalShifter(Transform):
+class MySignalShifter(RandomTransform):
     order = 6
 
-    def __init__(self, random=True, max_time=0.1, direction=1, **kwargs):
-        self.random = random
+    def __init__(self, random=True, p=0.5, max_time=0.1, direction=1, **kwargs):
+        super().__init__(random=random, p=p)
         self.max_time = max_time
         self.direction = direction
 
-    def encodes(self, i: AudioTensor) -> AudioTensor:
+    def _encodes(self, i: AudioTensor) -> AudioTensor:
         debug(self)
-        if not self.random:
-            return i
 
         # rng
         shift_factor = random.uniform(-1, 1)
@@ -417,19 +420,17 @@ class StreamPostprocess(Transform):
         return spectro_new
 
 
-class MyCutFrames(Transform):
+class MyCutFrames(RandomTransform):
     "Cut a spectrogram at the start (front) and the end (back)."
     order = 30
 
-    def __init__(self, random=True, max_front=2, max_back=2, **kwargs):
-        self.random = random
+    def __init__(self, random=True, p=0.5, max_front=2, max_back=2, **kwargs):
+        super().__init__(random=random, p=p)
         self.max_front = max_front
         self.max_back = max_back
 
-    def encodes(self, spectro) -> None:
+    def _encodes(self, spectro) -> None:
         debug(self)
-        if not self.random:
-            return spectro
         f = random.randint(0, self.max_front)
         b = random.randint(0, self.max_back)
         spectro = spectro[:, f:, ...]
@@ -438,12 +439,13 @@ class MyCutFrames(Transform):
         return spectro
 
 
-class MyMaskTime(Transform):
+class MyMaskTime(RandomTransform):
     order = 31
 
     def __init__(
         self,
         random=True,
+        p=0.5,
         num_masks=1,
         size=20,
         start=None,
@@ -451,18 +453,16 @@ class MyMaskTime(Transform):
         adaptive=True,
         **kwargs,
     ):
-        self.random = random
+        super().__init__(random=random, p=p)
         self.num_masks = num_masks
         self.size = size
         self.start = start
         self.val = val
         self.adaptive = adaptive
 
-    def encodes(self, spectro) -> None:
+    def _encodes(self, spectro) -> None:
         """Google SpecAugment time masking from https://arxiv.org/abs/1904.08779."""
         debug(self, spectro)
-        if not self.random:
-            return spectro
         num_masks = self.num_masks
         size = self.size
         start = self.start
@@ -494,12 +494,13 @@ class MyMaskTime(Transform):
         return sg
 
 
-class MyMaskFreq(Transform):
+class MyMaskFreq(RandomTransform):
     order = 32
 
     def __init__(
         self,
         random=True,
+        p=0.5,
         num_masks=1,
         size=20,
         start=None,
@@ -507,7 +508,7 @@ class MyMaskFreq(Transform):
         adaptive=False,
         **kwargs,
     ):
-        self.random = random
+        super().__init__(random=random, p=p)
         self.num_masks = num_masks
         self.size = size
         self.start = start
@@ -515,10 +516,8 @@ class MyMaskFreq(Transform):
         self.adaptive = adaptive
         self.kwargs = kwargs
 
-    def encodes(self, spectro) -> None:
+    def _encodes(self, spectro) -> None:
         debug(self)
-        if not self.random:
-            return spectro
         sg = spectro.clone()
         sg = torch.einsum("...ij->...ji", sg)
         sg = MyMaskTime(
@@ -529,7 +528,7 @@ class MyMaskFreq(Transform):
             self.val,
             self.adaptive,
             **self.kwargs,
-        )(sg)
+        )._encodes(sg)
         return torch.einsum("...ij->...ji", sg)
 
 
@@ -590,14 +589,10 @@ class MyNumericalize(Transform):
 
     def __init__(self, lang, random, **kwargs):
         self.lang = lang
-        self.random = random
 
     def encodes(self, o: str):
         debug(self)
-        if self.random:
-            res = self.lang.numericalize(o)  # , dropout=0.25)
-        else:
-            res = self.lang.numericalize(o)
+        res = self.lang.numericalize(o)
         assert 0 not in res
         return res
 

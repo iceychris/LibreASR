@@ -2,8 +2,7 @@
 # data
 ###
 
-transforms:        
-
+transforms:
   # independent variable
   x-stft:
     - name: MyOpenAudio
@@ -16,24 +15,26 @@ transforms:
     - name: Resample
       partial: true
       args:
-        resample_sr: 8000
+        resample_sr: 16000
 
     # augmentation
     - name: ResamplePoly
       wrap: true
       partial: true
       args:
-        delta: 10
+        p: 0.5
+        delta: 25
     - name: MySignalShifter
       wrap: true
       partial: true
       args:
-        max_time: 0.1
+        p: 0.5
+        max_time: 0.3
         direction: 1
- 
+
     # bounds
     - name: PadderCutter
- 
+
     # prepare for batching
     - name: FixRawAudio
 
@@ -117,29 +118,29 @@ transforms:
 lang: de
 
 # datasets
-dataset_paths: 
-    tf-speech: "/data/stt/data/tf-speech-recognition/train"
-    tatoeba-en: "/data/stt/data/tatoeba/en"
-    librispeech-0: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-100"
-    librispeech-1: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-360"
-    librispeech-2: "/data/stt/data/librispeech/audio/LibriSpeech/train-other-500"
-    common-voice-en: "/data/stt/data/common-voice/en"
-    common-voice-de: "/data/stt/data/common-voice/de"
-    common-voice-fr: "/data/stt/data/common-voice/fr"
-    common-voice-es: "/data/stt/data/common-voice/es"
-    common-voice-it: "/data/stt/data/common-voice/it"
-    common-voice-et: "/data/stt/data/common-voice/et"
-    yt-en: "/data/stt/data/yt/en"
-    yt-de: "/data/stt/data/yt/de"
-    yt-fr: "/data/stt/data/yt/fr"
-    yt-es: "/data/stt/data/yt/es"
-    yt-it: "/data/stt/data/yt/it"
-    et-a: "/data/stt/data/estonian/intervjuud"
-    et-b: "/data/stt/data/estonian/vestlussaated"
-    et-c: "/data/stt/data/estonian/uudised"
-    et-d: "/data/stt/data/estonian/loengusalvestused"
-    et-e: "/data/stt/data/estonian/riigiokgu"
-    et-f: "/data/stt/data/estonian/jutusaated"
+dataset_paths:
+  tf-speech: "/data/stt/data/tf-speech-recognition/train"
+  tatoeba-en: "/data/stt/data/tatoeba/en"
+  librispeech-0: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-100"
+  librispeech-1: "/data/stt/data/librispeech/audio/LibriSpeech/train-clean-360"
+  librispeech-2: "/data/stt/data/librispeech/audio/LibriSpeech/train-other-500"
+  common-voice-en: "/data/stt/data/common-voice/en"
+  common-voice-de: "/data/stt/data/common-voice/de"
+  common-voice-fr: "/data/stt/data/common-voice/fr"
+  common-voice-es: "/data/stt/data/common-voice/es"
+  common-voice-it: "/data/stt/data/common-voice/it"
+  common-voice-et: "/data/stt/data/common-voice/et"
+  yt-en: "/data/stt/data/yt/en"
+  yt-de: "/data/stt/data/yt/de"
+  yt-fr: "/data/stt/data/yt/fr"
+  yt-es: "/data/stt/data/yt/es"
+  yt-it: "/data/stt/data/yt/it"
+  et-a: "/data/stt/data/estonian/intervjuud"
+  et-b: "/data/stt/data/estonian/vestlussaated"
+  et-c: "/data/stt/data/estonian/uudised"
+  et-d: "/data/stt/data/estonian/loengusalvestused"
+  et-e: "/data/stt/data/estonian/riigiokgu"
+  et-f: "/data/stt/data/estonian/jutusaated"
 
 # selected datasets
 datasets:
@@ -193,10 +194,9 @@ datasets:
 # percentage of each individual dataframe used
 #  (stage: builder)
 pcent:
-    train: 1.0  # 0.25 # 1.0
-    valid: 1.0  # 1.0
-    test: 1.0
-
+  train: 0.1 # 1.0 # 0.25 # 1.0
+  valid: 0.1 # 1.0 # 1.0
+  test: 1.0
 
 ###
 # audio & spectrogram
@@ -221,14 +221,13 @@ deltas: 0
 # concat N future frames
 n_forward_frames: 0
 
-
 ###
 # labels
 ###
 
 tokenizer:
   model_file: "./tmp/tokenizer.yttm-model"
-
+  wanted_vocab_sz: 256
 
 ###
 # data
@@ -255,13 +254,11 @@ y_max_words: 200
 # y_max: 15000
 # y_max_words: 1000
 
-
 # which dataset to use
 suffix: "" # "cat-2468-a" # "" # ["cat-2468-a", "cat-2468-b", "cat-2468-c"]
 
 # dataloader settings
 dataloader_args:
-
   # maximum batch size
   bs_max: 96 # 64 # 48 # 128 # 64 # 32
 
@@ -269,11 +266,10 @@ dataloader_args:
   bs_mul: 3. # 2. # 1.5 # 4. # 2. # 1.
 
   # prng save state path
-  prng_state_path: "/home/chris"
+  prng_state_path: "/home/libreasr"
 
   # dataloader debugging
   debug: false
-
 
 ###
 # GPU options
@@ -289,7 +285,6 @@ cuda:
   # see: https://discuss.pytorch.org/t/runtime-error-77/9392/9?u=sbelharbi
   device: "cuda:0"
 
-
 ###
 # CPU options
 ###
@@ -297,34 +292,33 @@ cuda:
 cpu:
   threads: 4
 
-
 ###
 # model
 ###
 
 model:
   name: Transducer
-  feature_sz: 1280
+  feature_sz: 480
   embed_sz: 512
-  hidden_sz: 1024
-  out_sz: 1024
-  joint_sz: 1024
-  vocab_sz: 2048
+  hidden_sz: 768
+  out_sz: 768
+  joint_sz: 768
+  vocab_sz: 256
   preprocessor:
-    sr: 8000
-    n_mels: 80 # 64
-    n_fft: 1024
-    downsample: 16
-    stack: 16
+    sr: 16000
+    n_mels: 80
+    n_fft: 400
+    downsample: 6
+    stack: 6
     trainable: true
   encoder:
-    name: Encoder # LinearTransformerEncoder
+    name: SlimEncoder # LinearTransformerEncoder
     rnn_type: "LSTM"
-    num_layers: 6 # 16
+    num_layers: 4 # 16
     norm: "ln"
-    dropout: 0.1
-    dropout_input: 0.0
-    dropout_inner: 0.0
+    dropout_input: 0.1
+    dropout_net: 0.05
+    dropout_final: 0.1
     reduction_factor: 1
     reduction_factors: []
     attention: false
@@ -332,20 +326,24 @@ model:
   predictor:
     name: Predictor
     rnn_type: "LSTM"
-    num_layers: 2
+    num_layers: 1
     norm: "ln"
-    dropout: 0.05
+    dropout: 0.1
     use_tmp_state_pcent: 0.0 # 0.95
   joint:
-    enable: true
     method: "concat"
     reversible: false # true
-    dropout: 0.0
+    arch: "slim"
+    act: "relu"
+    dropout: 0.1
+  enable_joint: true
+  enable_predictor: true
+  out_sz_enc: 768
+  out_sz_pre: 768
   use_tmp_bos: false
   use_tmp_bos_pcent: 0.2
   learnable_stft: true
   loss: true
-
 
 ###
 # batching
@@ -364,17 +362,16 @@ shuffle: True
 
 # shuffle at builder stage
 shuffle_builder:
-    train: True
-    valid: True
-    test: True
-
+  train: True
+  valid: True
+  test: True
 
 ###
 # training
 ###
 
 training:
-  optimizer: Ranger # AdaHessian
+  optimizer: Adam # Ranger # AdaHessian
 
   # use noisy student training
   #  (a variant of knowledge distillation)
@@ -384,15 +381,14 @@ training:
   #  (set to 0.0 to disable)
   clip-grad-norm: 2.0
 
-  # NativeMixedPrecision training
+  # MixedPrecision training
   mp:
-    enable: false
+    enable: true
 
   # DistributedDataParallel
   #  (muli-gpu and/or multi-host training)
   ddp:
     enable: false
-
 
 ###
 # other
@@ -400,7 +396,6 @@ training:
 
 # batch management
 batching:
-
   # batch size for training dataset
   #  (managed by DynamicBucketingDL)
   batch_size_train: "auto"
@@ -413,7 +408,7 @@ batching:
   #  (regular training: 20)
   #  (DDP training: 10)
   # streaming: 50
-  accumulate: 32 # 20 # 10 # 5
+  accumulate: 4 # 20 # 10 # 5
 
 # losses
 loss:
@@ -423,7 +418,6 @@ loss:
 # for training a tokenizer on the current corpus
 train_tokenizer: false
 dump_labels: false
-wanted_vocab_sz: 2048
 
 # random seed
 seed: 42
@@ -434,7 +428,7 @@ num_workers: 6 # 3 # 6 # 7
 
 # testing
 tensorboard: true
-wandb: true
+wandb: false
 tests_per_epoch: 8 # 24 # 8 # 24
 
 # eval speech model kwargs

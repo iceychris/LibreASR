@@ -107,9 +107,12 @@ class DynamicBucketingDL(TfmdDL):
         bs_mul=1.0,
         pad_minus_one=False,
         use_saved_prng=True,
-        prng_state_path="/home/chris",
+        prng_state_path="/home/libreasr",
         rank=0,
         debug=False,
+        shuffle_inner=True,
+        shuffle_outer=False,
+        shuffle_sort_batches_by_length: str = "asc",
         **kwargs,
     ):
         """
@@ -132,6 +135,9 @@ class DynamicBucketingDL(TfmdDL):
         self.prng_state_path = prng_state_path
         self.rank = rank
         self.debug = debug
+        self.shuffle_inner = shuffle_inner
+        self.shuffle_outer = shuffle_outer
+        self.shuffle_sort_batches_by_length = shuffle_sort_batches_by_length
 
     def get_idxs(self):
         idxs = super().get_idxs()
@@ -205,13 +211,18 @@ class DynamicBucketingDL(TfmdDL):
 
         # drop batches with length 1
         # as that does not work with BatchNorm
-        batches = list(filter(lambda batch: len(batch) != 1, batches))
+        # batches = list(filter(lambda batch: len(batch) != 1, batches))
 
         # intra-batch shuffling
-        batches = [nprng.permutation(batch).tolist() for batch in batches]
+        if self.shuffle_inner:
+            batches = [nprng.permutation(batch).tolist() for batch in batches]
 
         # batches shuffling
-        batches = nprng.permutation(batches).tolist()
+        if self.shuffle_outer:
+            batches = nprng.permutation(batches).tolist()
+        else:
+            mul = -1.0 if self.shuffle_sort_batches_by_length == "asc" else 1.0
+            batches = sorted(batches, key=lambda batch: mul * len(batch))
 
         # set _l
         self._l = len(batches)
@@ -378,6 +389,9 @@ def grab_asr_databunch(
     )
     sorted_dl_args_train = sorted_dl_args.copy()
     sorted_dl_args_train["tpls"] = tpls_train
+    sorted_dl_args_train["shuffle_inner"] = True
+    sorted_dl_args_train["shuffle_outer"] = False
+    sorted_dl_args_train["shuffle_sort_batches_by_length"] = "desc"
     if ddp:
         sorted_dl_args_train["pad_minus_one"] = True
         sorted_dl_args_train["rank"] = rank_distrib()

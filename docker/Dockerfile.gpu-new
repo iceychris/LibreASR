@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:1.7.1-cuda11.0-cudnn8-devel
+FROM nvidia/cuda:11.3.0-devel-ubuntu20.04
 
 # base & audio stuff
 RUN apt-get update && \
@@ -6,14 +6,14 @@ RUN apt-get update && \
     git gcc g++ sox libsox-dev libsox-fmt-all vim make \
     portaudio19-dev alsa-utils
 
-# python basics
+# python basics (pip, torch ecosystem)
+RUN apt-get install --no-install-recommends -y \
+    python3-pip python3-dev python3-venv
 RUN pip3 install packaging wheel setuptools Cython
-
-# chsh
-SHELL ["/bin/bash", "-c"]
+RUN pip3 install torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
 
 # wrap pip command + reqs
-ENV CUDA_HOME=/usr/local/cuda
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 COPY requirements.training-new.txt .
 RUN pip3 install -r requirements.training-new.txt
 
@@ -21,8 +21,15 @@ RUN pip3 install -r requirements.training-new.txt
 COPY check.py .
 RUN python3 check.py
 
-# install jupyterlab
+# install more dependencies
 RUN pip3 install jupyterlab
+COPY requirements.docs.txt .
+RUN pip3 install -r requirements.docs.txt
+RUN pip3 install -U numba nnAudio
+
+# run as user
+RUN useradd -m libreasr
+USER libreasr
 
 # switch workdir
 WORKDIR /workspace

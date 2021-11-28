@@ -30,13 +30,11 @@
   <a href="https://www.youtube.com/watch?v=jTii2zZMEQs"><img width="75%" src="https://github.com/iceychris/LibreASR/raw/dev/assets/libreasr.gif" alt="LibreASR in Action"></a>
 </p>
 
-
 ## Links
 
-* visit [LibreASRs documentation](https://libreasr.github.io/)
+- visit [LibreASRs documentation](https://libreasr.github.io/)
 
-* [join the Discord Server](https://discord.gg/wrcjdv9ZrR) for updates on the project
-
+- [join the Discord Server](https://discord.gg/wrcjdv9ZrR) for updates on the project
 
 ## Contributing
 
@@ -44,11 +42,39 @@
 
 Please make sure to update tests as appropriate.
 
+### Local Development
+
+Develop on your local machine:
+
+```bash
+# create a new virtual environment to work in
+python3 -m venv venv
+
+# activate the virtual environment
+source ./venv/bin/activate
+
+# install PyTorch
+pip3 install torch==1.10.0+cu113 torchvision==0.11.1+cu113 torchaudio==0.10.0+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+
+# install requirements
+pip3 install packaging wheel setuptools Cython
+pip3 install -r docker/requirements.training-new.txt
+```
+
+Or build a docker image ([make sure `nvidia-container-runtime` is your default docker runtime](https://stackoverflow.com/questions/59691207/docker-build-with-nvidia-runtime)):
+
+```bash
+# build
+cd docker
+docker build -f Dockerfile.gpu-new -t libreasr:latest .
+
+# run
+docker run --rm -it --runtime=nvidia --shm-size=4G -v $(pwd):/workspace libreasr:latest /bin/bash
+```
 
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
-
 
 ## Stargazers
 

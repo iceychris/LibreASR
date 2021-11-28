@@ -94,9 +94,8 @@ class ASRDatabunchBuilder:
             ASRDatabunchBuilder().set_mode(mode).set_suffix(suffix).multi(paths, pcent)
         )
         builder.set_drop_labels(conf.get("builder", {}).get("drop_labels", False))
-        if conf["apply_x_limits"]:
+        if conf["apply_limits"]:
             builder = builder.x_bounds(conf["almins"] * 1000.0, conf["almaxs"] * 1000.0)
-        if conf["apply_y_limits"]:
             builder = builder.y_bounds(conf["y_min"], conf["y_max"]).set_max_words(
                 conf["y_max_words"]
             )
